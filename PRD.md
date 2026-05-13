@@ -12,13 +12,13 @@
 
 The v2 PRD made one critical mistake: it tried to compete with Redis on Redis's terms. It claimed `<5ms` latency as a win when Redis ships `<1ms` in C. It framed MemSmith as "production-grade infrastructure" when the actual underserved user is a developer who shouldn't have to think about infrastructure at all.
 
-This PRD corrects that. MemSmith v3 is not a Redis replacement. It is the **SQLite of multi-agent state** — zero-infra, embedded, Python-native, and so easy to start that the getting-started experience is the product. The technical work is identical. The framing and API surface are completely different.
+This PRD corrects that. MemSmith v3 is not a Redis replacement. It is the **SQLite of multi-agent state** — zero-infra by default, embedded, Python-native, and so easy to start that the getting-started experience is the product. The underlying engine is similar to v2. The framing and default API surface are completely different.
 
 ---
 
 ## 1. The One-Line Pitch
 
-> **MemSmith: Shared state for multi-agent AI systems. No server. No config. Just `pip install`.**
+> **MemSmith: Shared state for multi-agent AI systems. No server by default. No config. Just `pip install`.**
 
 ---
 
@@ -69,9 +69,9 @@ Redis solves all three. But Redis requires 20 minutes of setup Arjun doesn't wan
 
 ## 4. The Solution
 
-MemSmith is a **Python-native, embedded, agent-aware state engine.** It runs in the same process as your agents (or as a lightweight background process for multi-process setups). It has no server to configure, no Docker image to pull, no external dependency to manage.
+MemSmith is a **Python-native, embedded, agent-aware state engine.** It runs in the same process as your agents by default, with an optional lightweight background process for multi-process setups. The core product experience is local and embedded first: no Redis, no Docker image, no separate service to bootstrap before the demo starts.
 
-The primary interface is a **Python SDK** — not an HTTP API. HTTP endpoints exist for multi-process and multi-machine setups, but the default experience is importing a library.
+The primary interface is a **Python SDK** — not an HTTP API. HTTP endpoints exist for multi-process and multi-machine setups, but they are an escape hatch, not the product story. The default experience is importing a library and starting a session in-process.
 
 ### The Three Pillars
 
@@ -79,7 +79,7 @@ The primary interface is a **Python SDK** — not an HTTP API. HTTP endpoints ex
 `pip install memsmith`. That's it. `memsmith.session()` starts an in-memory state store in the current process. There is no step 2.
 
 **2. Agent-Native API**
-The API is designed around agents, not around keys. Instead of `SET namespace:key value`, you write `session.agent("researcher").push("papers", data)`. Instead of writing a polling loop, you write `session.agent("writer").wait_for("researcher", "papers")`. The semantics of your agent system are visible in the code.
+The API is designed around agents, not around keys. Instead of `SET namespace:key value`, you write `await session.agent("researcher").push("papers", data)`. Instead of writing a polling loop, you write `await session.agent("writer").wait_for("researcher", "papers")`. The semantics of your agent system are visible in the code, and the SDK stays consistent between in-process and server mode by making coordination operations awaitable.
 
 **3. Debuggability as a First-Class Feature**
 `memsmith watch` opens a live TUI showing every agent's state in real-time. `memsmith dump` produces a human-readable, timestamped replay of every state transition in the session. This is the feature Arjun actually needs and nobody has built cleanly. It makes MemSmith the tool you reach for the moment something goes wrong.
@@ -92,34 +92,46 @@ The API is the product. It needs to read like English and make Redis feel verbos
 
 ### 5.1 In-Process Mode (Primary)
 
+The Phase 1 API standardizes on **awaitable coordination methods**: `push`, `get`, `wait_for`, `broadcast`, `checkpoint`, and `resume`. That keeps the in-process and server-backed SDK surfaces aligned. Pure metadata helpers can be synchronous later, but v1 should optimize for one mental model.
+
 ```python
+import asyncio
 import memsmith
 
-# Start a session — zero config, zero infra
-session = memsmith.session("research_pipeline")
-
-# In your Researcher agent
 async def researcher_agent(session):
     papers = await fetch_papers()
-    session.agent("researcher").push("papers", papers)
-    session.agent("researcher").push("status", "done")
+    await session.agent("researcher").push("papers", papers)
+    await session.agent("researcher").push("status", "done")
 
 # In your Writer agent  
 async def writer_agent(session):
     # Blocks until researcher pushes "papers" — no polling, no sleep()
     papers = await session.agent("writer").wait_for("researcher", key="papers")
     draft = await write_draft(papers)
-    session.agent("writer").push("draft", draft)
+    await session.agent("writer").push("draft", draft)
 
-# Broadcast to all agents
-session.broadcast("pipeline_complete", payload={"total_papers": 47})
+async def main():
+    # Start a session — zero config, zero infra
+    session = memsmith.session("research_pipeline")
+    await asyncio.gather(
+        researcher_agent(session),
+        writer_agent(session),
+    )
 
-# Human-readable checkpoint — writes a snapshot to disk
-session.checkpoint("after_research_phase")
+    # Broadcast to all agents
+    await session.broadcast("pipeline_complete", payload={"total_papers": 47})
 
-# On crash recovery — resume from last checkpoint
-session = memsmith.resume("research_pipeline")
+    # Human-readable checkpoint — writes a snapshot to disk
+    await session.checkpoint("after_research_phase")
+
+    # On crash recovery — resume from last checkpoint
+    recovered = await memsmith.resume("research_pipeline")
+    return recovered
+
+asyncio.run(main())
 ```
+
+`push()` is still fast in-process. The await is not because writes are slow; it is because MemSmith uses one SDK contract for local mode, lock coordination, and optional server mode.
 
 ### 5.2 Multi-Process Mode (Secondary)
 
@@ -130,11 +142,12 @@ memsmith serve --port 7117  # starts in <100ms
 ```
 
 ```python
-# Each agent process connects to the same session
-session = memsmith.connect("research_pipeline", host="localhost:7117")
+async def worker():
+    # Each agent process connects to the same session
+    session = await memsmith.connect("research_pipeline", host="localhost:7117")
 
-# API is identical to in-process mode
-session.agent("researcher").push("papers", papers)
+    # API is identical to in-process mode
+    await session.agent("researcher").push("papers", papers)
 ```
 
 ### 5.3 The Lock API
@@ -143,10 +156,10 @@ session.agent("researcher").push("papers", papers)
 # Acquire a lock — agent-aware, not key-aware
 async with session.agent("writer").lock("draft_section_1", timeout_ms=5000):
     # only one agent writes at a time
-    session.agent("writer").push("draft_section_1", content)
+    await session.agent("writer").push("draft_section_1", content)
 
 # Non-blocking check
-lock = session.agent("editor").try_lock("draft_section_1")
+lock = await session.agent("editor").try_lock("draft_section_1")
 if lock.held_by:
     print(f"Section locked by {lock.held_by}, waiting...")
 ```
@@ -154,12 +167,15 @@ if lock.held_by:
 ### 5.4 The Debuggability API
 
 ```python
-# Get full history for a session
-history = session.history()
-# Returns: [{timestamp, agent, operation, key, value_preview}, ...]
+async def inspect_session(session):
+    # Get full history for a session
+    history = await session.history()
+    # Returns: [{timestamp, agent, operation, key, value_preview}, ...]
 
-# Export a human-readable replay
-session.export("pipeline_replay.json")
+    # Export a human-readable replay
+    await session.export("pipeline_replay.json")
+
+    return history
 
 # From CLI
 # memsmith dump research_pipeline
@@ -253,7 +269,8 @@ class ShardStore:
         shard = self._shard(key)
         async with self._locks[shard]:
             self._shards[shard][key] = value
-            await self._wal.append(op="SET", key=key, value=value)
+            self._versions[key] = self._versions.get(key, 0) + 1
+            self._wal.append(op="SET", key=key, value=value, version=self._versions[key])
 ```
 
 ### 7.3 Serialization
@@ -275,55 +292,75 @@ data = decoder.decode(binary)
 
 ### 7.4 Write-Ahead Log
 
-A background thread (not the main event loop) handles all disk writes. The main thread enqueues log entries into an `asyncio.Queue`. The WAL thread drains the queue and appends to an append-only binary file. On startup, MemSmith replays unprocessed WAL entries before accepting new connections.
+A background thread, not the main event loop, handles disk writes. The async side of MemSmith performs only an in-memory enqueue onto a thread-safe queue. The WAL thread drains that queue, appends to an append-only binary file, and periodically flushes according to the durability policy. On startup, MemSmith replays WAL entries after the last checkpoint before accepting new work.
 
 ```python
+import queue
+import threading
+
 class WAL:
     def __init__(self, path: str):
-        self._queue: asyncio.Queue = asyncio.Queue()
+        self._queue: queue.SimpleQueue[WALEntry] = queue.SimpleQueue()
         self._path = path
         self._encoder = msgspec.msgpack.Encoder()
+        self._thread = threading.Thread(target=self._flush_worker, daemon=True)
     
-    async def append(self, op: str, key: str, value: Any) -> None:
-        # Non-blocking — enqueue and return immediately
+    def append(self, op: str, key: str, value: Any, version: int) -> None:
+        # Non-blocking from the event loop's perspective: enqueue and return immediately.
         entry = WALEntry(
             timestamp=time.time_ns(),
-            op=op, key=key, value=value
+            op=op, key=key, value=value, version=version
         )
-        await self._queue.put(entry)
+        self._queue.put(entry)
     
-    async def _flush_worker(self):
-        # Runs in background — drains queue and writes to disk
-        async with aiofiles.open(self._path, "ab") as f:
+    def _flush_worker(self) -> None:
+        # Runs in the background thread — drains queue and writes to disk.
+        with open(self._path, "ab") as f:
             while True:
-                entry = await self._queue.get()
-                await f.write(self._encoder.encode(entry))
+                entry = self._queue.get()
+                f.write(self._encoder.encode(entry))
 ```
 
 ### 7.5 `wait_for` Implementation
 
-This is the most important API primitive. It uses an asyncio.Event internally, not polling.
+This is the most important API primitive. It should not be modeled as a bare `asyncio.Event`, because events stay set and do not express whether the caller wants the current value or the next value. MemSmith should track a monotonically increasing version per key and wait on a per-key condition.
 
 ```python
-async def wait_for(self, source_agent: str, key: str, timeout_ms: int = 30000) -> Any:
+async def wait_for(
+    self,
+    source_agent: str,
+    key: str,
+    after_version: int | None = None,
+    timeout_ms: int = 30000,
+) -> StateValue:
     full_key = f"{source_agent}:{key}"
-    event = self._session._get_or_create_event(full_key)
-    
-    try:
-        await asyncio.wait_for(event.wait(), timeout=timeout_ms / 1000)
-    except asyncio.TimeoutError:
-        raise MemSmithTimeoutError(
-            f"Timed out waiting for agent '{source_agent}' to push '{key}'"
+    current = self._session.store.get_with_version(full_key)
+
+    if current is not None and (
+        after_version is None or current.version > after_version
+    ):
+        return current
+
+    async with self._session.condition(full_key):
+        await asyncio.wait_for(
+            self._session.condition(full_key).wait_for(
+                lambda: self._session.store.version(full_key) > (after_version or 0)
+            ),
+            timeout=timeout_ms / 1000,
         )
-    
-    return self._session.store.get(full_key)
+
+    return self._session.store.get_with_version(full_key)
 ```
 
-When `researcher.push("papers", data)` is called, it sets the asyncio.Event for `"researcher:papers"`, and any agent awaiting that event is immediately unblocked. Zero polling. Zero sleep loops.
+Semantics:
+
+- If the source agent already wrote the key and the caller has not supplied `after_version`, `wait_for()` returns the latest value immediately.
+- If the caller passes `after_version`, `wait_for()` blocks until a newer write appears.
+- In server mode, the SDK preserves the same contract by mapping this wait onto a subscription stream or WebSocket-backed notification channel. No polling. No sleep loops.
 
 ### 7.6 The Server Mode (FastAPI + uvloop)
 
-Only activated when `memsmith serve` is run. Uses FastAPI + Uvicorn + uvloop. HTTP endpoints mirror the Python SDK. WebSocket endpoint powers the remote `memsmith watch` mode.
+Only activated when `memsmith serve` is run. Uses FastAPI + Uvicorn, with uvloop enabled on Unix-like systems. HTTP and WebSocket transports back the same awaitable SDK contract used in-process, so the user learns one API shape instead of two.
 
 ```python
 # uvloop is a one-line config change
@@ -340,7 +377,7 @@ uvloop.install()  # replaces default asyncio event loop globally
 | F-01 | `session()` in-process | Zero-config session start, no network call | P0 | 1 |
 | F-02 | `agent().push()` | Write state scoped to an agent identity | P0 | 1 |
 | F-03 | `agent().get()` | Read state scoped to an agent | P0 | 1 |
-| F-04 | `agent().wait_for()` | Event-based blocking wait, no polling | P0 | 1 |
+| F-04 | `agent().wait_for()` | Version-aware blocking wait, no polling | P0 | 1 |
 | F-05 | `agent().lock()` | Async context manager for atomic write sections | P0 | 1 |
 | F-06 | Async WAL | Background append-only log, non-blocking | P0 | 2 |
 | F-07 | `session.checkpoint()` | Explicit snapshot to disk (msgpack + JSON) | P0 | 2 |
@@ -357,7 +394,7 @@ uvloop.install()  # replaces default asyncio event loop globally
 
 ## 9. Non-Functional Requirements
 
-**Installation:** `pip install memsmith`. Zero system dependencies. No Docker. No native libraries that break on Windows. Tested on macOS (Apple Silicon + Intel), Linux, Windows.
+**Installation:** `pip install memsmith`. No Docker. No Redis. No external service startup. Python package dependencies may include platform wheels, but common installs on macOS, Linux, and Windows must not require manual compiler setup for in-process mode.
 
 **Startup time:** `memsmith.session()` must be ready in under 100ms. No network calls on startup.
 
@@ -365,9 +402,9 @@ uvloop.install()  # replaces default asyncio event loop globally
 
 **Crash recovery:** After a hard kill (`kill -9`), the next `memsmith.resume()` must restore all state up to the last WAL-flushed entry. Target: under 500ms recovery time for sessions under 100MB.
 
-**Python compatibility:** 3.11+. No support for older versions — msgspec and uvloop both require modern Python.
+**Python compatibility:** 3.11+. No support for older versions. msgspec requires modern Python, and server-mode event-loop optimizations should assume current CPython releases.
 
-**Windows compatibility:** In-process mode must work fully on Windows. Server mode (uvloop) is Linux/macOS only — this must be clearly documented, not silently broken.
+**Windows compatibility:** In-process mode must work fully on Windows. Server mode is a v1 macOS/Linux feature; on Windows it must either fall back to the default asyncio event loop with clearly documented tradeoffs or be explicitly marked unsupported.
 
 ---
 
@@ -463,7 +500,7 @@ crew = Crew(
 
 - Sharded in-memory store (16 shards, asyncio.Lock)
 - `session()`, `agent().push()`, `agent().get()`
-- `agent().wait_for()` using asyncio.Event (no polling)
+- `agent().wait_for()` using per-key versions + condition variables (no polling)
 - `agent().lock()` context manager
 - msgspec + Msgpack serialization
 - Session scoping and agent identity
@@ -475,7 +512,7 @@ import memsmith
 
 async def main():
     session = memsmith.session("demo")
-    session.agent("a").push("msg", "hello from A")
+    await session.agent("a").push("msg", "hello from A")
     result = await session.agent("b").wait_for("a", "msg")
     print(result)  # "hello from A"
 
