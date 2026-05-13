@@ -9,7 +9,7 @@ from memsmith.session.manager import Session
 
 def session(name: str, *, data_dir: str | Path | None = None) -> Session:
     """Start an in-process MemSmith session."""
-    return Session(name=name, data_dir=Path(data_dir) if data_dir else None)
+    return Session(name=name, data_dir=Path(data_dir) if data_dir else None, transport="local")
 
 
 async def connect(name: str, *, host: str) -> Session:
@@ -17,13 +17,16 @@ async def connect(name: str, *, host: str) -> Session:
 
     This scaffold keeps the same return type as local sessions so the SDK stays stable.
     """
-    return Session(name=name, remote_host=host)
+    return Session(name=name, remote_host=host, transport="remote")
 
 
 async def resume(name: str, *, data_dir: str | Path | None = None) -> Session:
     """Resume a session from the on-disk recovery path."""
-    return Session(
+    restored = Session(
         name=name,
         data_dir=Path(data_dir) if data_dir else None,
+        transport="local",
         recovered=True,
     )
+    await restored.recover()
+    return restored

@@ -1,0 +1,15 @@
+{
+  "session_name": "recovery-demo",
+  "label": "after-research",
+  "created_at_ns": 1778686772209966000,
+  "checkpointed_at_ns": 1778686772210540000,
+  "event_count": 1,
+  "last_wal_timestamp_ns": 1778686772210394000,
+  "states": [
+    {
+      "key": "researcher:status",
+      "value": "checkpointed",
+      "version": 1
+    }
+  ]
+}

@@ -21,11 +21,13 @@ class StateValue:
 class HistoryEvent:
     """Human-readable event emitted by the session."""
 
+    timestamp_ns: int
     operation: str
     agent: str
     key: str
     version: int = 0
     value_preview: str | None = None
+    value_size_bytes: int = 0
 
 
 @dataclass(slots=True, frozen=True)

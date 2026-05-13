@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from time import time_ns
 from typing import Any
 
+from memsmith.observability.streams import StreamEnvelope
+from memsmith.observability.history import write_json_history
+from memsmith.persistence.checkpoint import CheckpointWriter
+from memsmith.persistence.paths import session_home, wal_path
+from memsmith.persistence.recovery import build_recovery_plan, replayable_entries
+from memsmith.persistence.wal import WAL
 from memsmith.state.locks import LockRegistry
 from memsmith.state.shard_store import ShardStore
 from memsmith.state.waiters import WaitRegistry
-from memsmith.types import HistoryEvent
+from memsmith.types import HistoryEvent, StateValue
 
 
 @dataclass(slots=True)
@@ -25,22 +33,46 @@ class Session:
     name: str
     data_dir: Path | None = None
     remote_host: str | None = None
+    transport: str = "local"
     recovered: bool = False
+    created_at_ns: int = field(default_factory=time_ns)
     store: ShardStore = field(default_factory=ShardStore)
     locks: LockRegistry = field(default_factory=LockRegistry)
     waiters: WaitRegistry = field(default_factory=WaitRegistry)
+    session_home: Path = field(init=False)
+    wal: WAL = field(init=False)
+    checkpoint_writer: CheckpointWriter = field(init=False)
+    event_count: int = field(default=0, init=False)
+    last_event_at_ns: int = field(default=0, init=False)
     _history: list[HistoryEvent] = field(default_factory=list, init=False)
+    _subscribers: list[asyncio.Queue[StreamEnvelope]] = field(default_factory=list, init=False)
+
+    def __post_init__(self) -> None:
+        self.session_home = session_home(self.name, base_dir=self.data_dir)
+        self.session_home.mkdir(parents=True, exist_ok=True)
+        self.wal = WAL(path=wal_path(self.name, base_dir=self.data_dir))
+        self.checkpoint_writer = CheckpointWriter(session_name=self.name, base_dir=self.data_dir)
+        self.last_event_at_ns = self.created_at_ns
 
     def agent(self, agent_name: str) -> "AgentContext":
         from memsmith.session.agent import AgentContext
 
         return AgentContext(session=self, name=agent_name)
 
-    def full_key(self, agent_name: str, key: str) -> str:
+    def state_key(self, agent_name: str, key: str) -> str:
         return f"{agent_name}:{key}"
+
+    def lock_key(self, agent_name: str, key: str) -> str:
+        return key
+
+    def full_key(self, agent_name: str, key: str) -> str:
+        return self.state_key(agent_name, key)
 
     def preview(self, value: Any) -> str:
         return repr(value)[:80]
+
+    def value_size_bytes(self, value: Any) -> int:
+        return len(repr(value).encode("utf-8"))
 
     def record_event(
         self,
@@ -51,16 +83,21 @@ class Session:
         version: int = 0,
         value: Any | None = None,
     ) -> None:
+        recorded_at_ns = time_ns()
         preview = None if value is None else self.preview(value)
-        self._history.append(
-            HistoryEvent(
-                operation=operation,
-                agent=agent,
-                key=key,
-                version=version,
-                value_preview=preview,
-            )
+        self.event_count += 1
+        self.last_event_at_ns = recorded_at_ns
+        event = HistoryEvent(
+            timestamp_ns=recorded_at_ns,
+            operation=operation,
+            agent=agent,
+            key=key,
+            version=version,
+            value_preview=preview,
+            value_size_bytes=0 if value is None else self.value_size_bytes(value),
         )
+        self._history.append(event)
+        self._publish_event(event)
 
     async def notify(self, key: str) -> None:
         condition = self.waiters.for_key(key)
@@ -69,16 +106,71 @@ class Session:
 
     async def broadcast(self, event: str, *, payload: Any | None = None) -> None:
         self.record_event("BROADCAST", agent="session", key=event, value=payload)
+        self.wal.append("BROADCAST", event, payload, version=self.event_count)
 
     async def history(self) -> list[HistoryEvent]:
         return list(self._history)
 
+    async def snapshot_state(self) -> dict[str, StateValue]:
+        return await self.store.snapshot()
+
     async def checkpoint(self, label: str) -> None:
+        self.flush_wal()
+        snapshot = await self.snapshot_state()
+        last_wal_timestamp_ns = self.wal.entries[-1].timestamp_ns if self.wal.entries else 0
+        self.checkpoint_writer.write(
+            label,
+            snapshot=snapshot,
+            created_at_ns=self.created_at_ns,
+            event_count=self.event_count,
+            last_wal_timestamp_ns=last_wal_timestamp_ns,
+        )
         self.record_event("CHECKPOINT", agent="session", key=label)
+        self.wal.append(
+            "CHECKPOINT",
+            label,
+            {"path": str(self.checkpoint_writer.path_for(label))},
+            version=self.event_count,
+        )
 
     async def export(self, path: str | Path) -> Path:
-        output_path = Path(path)
-        serialized = [asdict(event) for event in self._history]
-        output_path.write_text(json.dumps(serialized, indent=2), encoding="utf-8")
-        return output_path
+        return write_json_history(path, self._history)
+
+    def flush_wal(self) -> None:
+        self.wal.flush()
+
+    def close(self) -> None:
+        self.wal.close()
+
+    def subscribe(self) -> asyncio.Queue[StreamEnvelope]:
+        queue: asyncio.Queue[StreamEnvelope] = asyncio.Queue()
+        self._subscribers.append(queue)
+        return queue
+
+    def unsubscribe(self, queue: asyncio.Queue[StreamEnvelope]) -> None:
+        if queue in self._subscribers:
+            self._subscribers.remove(queue)
+
+    async def recover(self) -> None:
+        plan = build_recovery_plan(self.name, base_dir=self.data_dir)
+        checkpoint_timestamp_ns = 0
+
+        if plan.checkpoint_path is not None:
+            checkpoint = self.checkpoint_writer.read(plan.checkpoint_path)
+            await self.store.restore({state.key: state for state in checkpoint.states})
+            self.created_at_ns = checkpoint.created_at_ns
+            self.event_count = checkpoint.event_count
+            self.last_event_at_ns = checkpoint.checkpointed_at_ns
+            checkpoint_timestamp_ns = checkpoint.last_wal_timestamp_ns
+
+        if plan.wal_path is not None:
+            for entry in replayable_entries(self.wal.read_entries(), after_timestamp_ns=checkpoint_timestamp_ns):
+                await self.store.put_state(
+                    StateValue(key=entry.key, value=entry.value, version=entry.version)
+                )
+
+    def _publish_event(self, event: HistoryEvent) -> None:
+        envelope = StreamEnvelope(session_name=self.name, sequence=self.event_count, event=event)
+        for subscriber in list(self._subscribers):
+            subscriber.put_nowait(envelope)
 

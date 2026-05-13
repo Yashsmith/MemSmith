@@ -22,8 +22,9 @@ class AgentContext:
     name: str
 
     async def push(self, key: str, value: Any) -> StateValue:
-        full_key = self.session.full_key(self.name, key)
-        state = self.session.store.set(full_key, value)
+        full_key = self.session.state_key(self.name, key)
+        state = await self.session.store.set(full_key, value)
+        self.session.wal.append("PUSH", full_key, value, version=state.version)
         self.session.record_event(
             "PUSH",
             agent=self.name,
@@ -35,7 +36,7 @@ class AgentContext:
         return state
 
     async def get(self, key: str) -> Any | None:
-        full_key = self.session.full_key(self.name, key)
+        full_key = self.session.state_key(self.name, key)
         state = self.session.store.get(full_key)
         if state is None:
             return None
@@ -55,7 +56,7 @@ class AgentContext:
         after_version: int | None = None,
         timeout_ms: int = 30_000,
     ) -> Any:
-        full_key = self.session.full_key(source_agent, key)
+        full_key = self.session.state_key(source_agent, key)
         current = self.session.store.get(full_key)
 
         if current is not None and (after_version is None or current.version > after_version):
@@ -101,7 +102,7 @@ class AgentContext:
 
     @asynccontextmanager
     async def lock(self, key: str, timeout_ms: int = 5_000) -> AsyncIterator[LockInfo]:
-        full_key = self.session.full_key(self.name, key)
+        full_key = self.session.lock_key(self.name, key)
         lock_info = await self.session.locks.acquire(full_key, owner=self.name, timeout_ms=timeout_ms)
         self.session.record_event("LOCK_ACQUIRE", agent=self.name, key=full_key, value=lock_info.token)
         try:
@@ -111,5 +112,5 @@ class AgentContext:
             self.session.record_event("LOCK_RELEASE", agent=self.name, key=full_key)
 
     async def try_lock(self, key: str) -> LockInfo:
-        full_key = self.session.full_key(self.name, key)
+        full_key = self.session.lock_key(self.name, key)
         return self.session.locks.status(full_key)

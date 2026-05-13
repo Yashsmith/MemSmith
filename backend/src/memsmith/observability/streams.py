@@ -12,4 +12,5 @@ class StreamEnvelope:
     """Stable payload shape for local and remote event streams."""
 
     session_name: str
+    sequence: int
     event: HistoryEvent

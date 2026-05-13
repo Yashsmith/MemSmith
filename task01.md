@@ -49,6 +49,13 @@ After this plan is executed, a contributor or end user should be able to:
 ## Progress
 
 - 2026-05-13: Planning document created from `PRD.md`, the backend scaffold, examples, and tests. No implementation work has started.
+- 2026-05-13 20:59:00 IST: Completed Step 1. Added timestamped history events, explicit session transport/runtime metadata, and separate state-key vs lock-key helpers while preserving the current local SDK happy path.
+- 2026-05-13 21:01:33 IST: Completed Step 2. Replaced the single-dict store with a real multi-shard store, moved writes onto shard-scoped async locks, and added snapshot coverage plus state-semantics integration tests.
+- 2026-05-13 21:03:41 IST: Completed Step 3. Finalized the session-scoped lock-key boundary, added lock wait/reentry semantics, and verified the existing version-aware wait path with focused tests.
+- 2026-05-13 21:06:01 IST: Completed Step 4. Added a file-backed WAL with msgspec msgpack frames, a background flush thread, explicit flush/close lifecycle hooks, and verified that local pushes now create durable WAL artifacts on disk.
+- 2026-05-13 21:09:32 IST: Completed Step 5. Added checkpoint snapshot serialization plus JSON sidecars, store restore helpers, real `resume()` recovery with WAL replay after the latest checkpoint, and verified restored state through integration and smoke paths.
+- 2026-05-13 21:13:35 IST: Completed Step 6. Added timestamp-aware dump formatting, JSON history serialization with rendered lines, and a real `memsmith dump` CLI that reads persisted session history from WAL/checkpoint artifacts.
+- 2026-05-13 21:17:54 IST: Completed Step 7. Added runtime stream envelopes, a persisted WAL watch consumer, a minimal `memsmith watch` CLI, and a package `__main__` entrypoint so `python -m memsmith watch ...` works.
 
 # Scope
 
@@ -475,6 +482,7 @@ Files to change:
 
 - `backend/src/memsmith/state/shard_store.py`
 - `backend/src/memsmith/session/manager.py`
+- `backend/src/memsmith/session/agent.py`
 - `backend/src/memsmith/types.py`
 - `[Create] backend/tests/unit/test_shard_store.py`
 - `[Create] backend/tests/integration/test_state_semantics.py`
@@ -590,6 +598,7 @@ Files to change:
 - `backend/src/memsmith/persistence/recovery.py`
 - `backend/src/memsmith/session/manager.py`
 - `backend/src/memsmith/api.py`
+- `backend/src/memsmith/state/shard_store.py`
 - `backend/examples/crash_recovery.py`
 - `[Create] backend/tests/integration/test_persistence_recovery.py`
 - `backend/tests/smoke/test_examples.py`
@@ -692,6 +701,11 @@ Which commands prove it passed:
 - `cd backend && python -m pytest tests/integration/test_watch_stream.py`
 - `cd backend && python -m memsmith watch two-agent-demo`  
   Manual verification: live events appear in the terminal for a running example session.
+
+Implementation note after execution:
+
+- `backend/pyproject.toml` already had the optional `watch` dependencies, so no package-metadata change was needed.
+- `backend/src/memsmith/__main__.py` had to be added so the planned `python -m memsmith watch ...` command actually executes the CLI.
 
 ## Step 8 — Implement FastAPI server mode and remote client parity
 
@@ -897,7 +911,20 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 
 ## Validation log
 
-- Not started.
+- 2026-05-13 20:58:15 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/unit/test_public_api.py tests/unit/test_session_flow.py && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python examples/two_agents.py` failed because `pytest` was not installed in the configured virtual environment.
+- 2026-05-13 20:58:27 IST: Installed missing step-1 test dependencies with `install_python_packages` for `pytest` and `pytest-asyncio`.
+- 2026-05-13 20:58:35 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/unit/test_public_api.py tests/unit/test_session_flow.py && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python examples/two_agents.py` passed. Result: 5 unit tests passed and `examples/two_agents.py` printed `['paper-a', 'paper-b']`.
+- 2026-05-13 21:01:33 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/unit/test_shard_store.py tests/integration/test_state_semantics.py tests/unit/test_session_flow.py` passed. Result: 6 tests passed covering shard routing, version increments, snapshot behavior, and the existing local wait/push flow.
+- 2026-05-13 21:03:41 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/unit/test_waiters.py tests/unit/test_locks.py tests/unit/test_session_flow.py` passed. Result: 9 tests passed covering immediate wait resolution, `after_version` waiting, timeout behavior, cross-agent lock visibility, lock waiting, and local history semantics.
+- 2026-05-13 21:05:30 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/unit/test_wal.py tests/integration/test_wal_flow.py` failed during collection because `msgspec` was not installed in the configured virtual environment.
+- 2026-05-13 21:05:42 IST: Installed missing step-4 dependency with `install_python_packages` for `msgspec`.
+- 2026-05-13 21:06:01 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/unit/test_wal.py tests/integration/test_wal_flow.py` passed. Result: 2 tests passed covering WAL append order, msgpack round-trip decoding, and durable session push artifacts under the session home.
+- 2026-05-13 21:09:21 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/integration/test_persistence_recovery.py tests/smoke/test_examples.py` passed. Result: 3 tests passed covering checkpoint file creation, checkpoint JSON sidecars, recovery from `resume()`, WAL replay after checkpoint, and the crash-recovery example entrypoint.
+- 2026-05-13 21:09:32 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python examples/crash_recovery.py` passed. Result: printed `checkpointed`, proving the example restores persisted state rather than only returning a recovery flag.
+- 2026-05-13 21:13:24 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/unit/test_history_format.py tests/integration/test_cli_dump.py` passed. Result: 3 tests passed covering relative timestamp formatting, PRD-style checkpoint rendering, CLI dump timeline output, and JSON export with rendered lines.
+- 2026-05-13 21:13:35 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/unit/test_session_flow.py` passed. Result: 3 tests passed confirming the updated `Session.export()` path preserved the existing local session flow and JSON history export behavior.
+- 2026-05-13 21:16:30 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/integration/test_watch_stream.py` passed. Result: 2 tests passed covering in-process stream ordering for lock/push/broadcast flows and persisted WAL observation for the local watch consumer.
+- 2026-05-13 21:17:54 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m memsmith watch cli-watch --data-dir <tmpdir> --limit 2 --idle-timeout-ms 500` passed after creating a temporary persisted session. Result: the CLI printed live watch lines for `PUSH` and `BROADCAST` events through the package entrypoint.
 
 # Logging / debugging notes
 
@@ -914,6 +941,22 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 - 2026-05-13: Keep the in-process SDK as the source of truth and make server mode adapt that behavior, not diverge from it.
 - 2026-05-13: Keep tests split into unit, integration, smoke, and targeted local/manual perf checks rather than building benchmark-heavy default CI.
 - 2026-05-13: Keep persistence file-based under `.memsmith/` rather than introducing SQL or graph storage.
+- 2026-05-13 20:59:00 IST: For Step 1, add explicit `Session.state_key(...)` and `Session.lock_key(...)` helper boundaries now, but keep lock behavior unchanged until the dedicated lock-semantics step.
+- 2026-05-13 20:59:00 IST: Add `timestamp_ns` to `HistoryEvent` and session runtime metadata (`transport`, `created_at_ns`, `event_count`, `last_event_at_ns`) instead of introducing a separate lifecycle event stream this early.
+- 2026-05-13 21:00:00 IST: Step 2 must include `backend/src/memsmith/session/agent.py` because `AgentContext.push()` is the only current caller of `ShardStore.set()`, so a real async sharded store cannot be implemented without updating that call site.
+- 2026-05-13 21:01:33 IST: Keep `ShardStore.get()` and `ShardStore.version()` synchronous, but make `ShardStore.set()` async and shard-locked. Because the write path has no internal awaits once the shard lock is held, read calls can stay simple while still avoiding partial writes on the event loop.
+- 2026-05-13 21:01:33 IST: Implement `ShardStore.snapshot()` by acquiring all shard locks in stable order, copying state, and releasing in reverse order so later checkpoint/export work can read a consistent snapshot.
+- 2026-05-13 21:03:41 IST: Make lock targets session-scoped by logical key through `Session.lock_key(...)` so different agents can contend on the same draft/tool key without changing state-key semantics.
+- 2026-05-13 21:03:41 IST: Make `LockRegistry` reentrant for the same owner and timeout-based for different owners. `try_lock()` remains the non-blocking conflict inspection path.
+- 2026-05-13 21:06:01 IST: Encode WAL entries as length-prefixed msgpack frames so the log stays append-only and stream-readable without newline-sensitive parsing.
+- 2026-05-13 21:06:01 IST: Keep WAL durability behind a background flush thread with an explicit `flush()` / `close()` lifecycle, so session code only enqueues entries and tests can force durable state when needed.
+- 2026-05-13 21:07:00 IST: Step 5 must include `backend/src/memsmith/state/shard_store.py` because recovery needs a direct restore path that preserves versions without replaying through `AgentContext.push()` and duplicating WAL writes.
+- 2026-05-13 21:09:32 IST: Store checkpoints as msgpack snapshots plus JSON sidecars. The binary snapshot is for exact recovery, while the sidecar keeps the artifact inspectable for contributors and future tooling.
+- 2026-05-13 21:09:32 IST: Recovery should restore the latest checkpoint first, then replay only later `PUSH` WAL entries using the recorded last-WAL timestamp. This preserves state versions without re-emitting writes into the WAL.
+- 2026-05-13 21:13:35 IST: Make `memsmith dump` reconstruct timelines from persisted WAL/checkpoint artifacts instead of live in-memory history, so the CLI remains useful across process boundaries and after recovery.
+- 2026-05-13 21:13:35 IST: Keep JSON history export as a list of structured event objects, but add a rendered `line` field so the same artifact is both machine-readable and quick to inspect by hand.
+- 2026-05-13 21:17:54 IST: Split watch into two seams: `Session.record_event()` emits non-blocking in-process `StreamEnvelope`s for exact ordering, while the CLI tails the persisted WAL so `watch` already works across processes before server mode lands.
+- 2026-05-13 21:17:54 IST: Keep the watch UI intentionally line-oriented for now. The stable contract is the stream envelope and consumer path; a richer TUI can build on that seam later without changing the runtime.
 
 # Surprises / discoveries
 
@@ -924,18 +967,27 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 - 2026-05-13: `server/app.py` is currently metadata-only and not a FastAPI app.
 - 2026-05-13: History events lack timestamps even though the PRD and dump spec require them.
 - 2026-05-13: The PRD architecture tree still names a `memsmith/core/` layout that does not match the current repo structure.
+- 2026-05-13 20:58:15 IST: The configured project virtual environment did not have `pytest` installed, so step execution needed a one-time environment repair before tests could run.
+- 2026-05-13 21:00:00 IST: The original step-2 file list missed `backend/src/memsmith/session/agent.py`, which must change if store writes become truly shard-locked and async.
+- 2026-05-13 21:01:33 IST: The current event-loop-only design made a real shard-locked store easier than expected, because no cross-thread coordination was needed yet for store reads/writes.
+- 2026-05-13 21:03:41 IST: The existing `wait_for()` implementation already satisfied the core version-aware semantics once it was exercised with explicit `after_version` tests, so step 3 only needed lock-path code changes.
+- 2026-05-13 21:05:30 IST: The virtual environment also lacked `msgspec`, even though it is declared in `backend/pyproject.toml`; step 4 needed a one-time dependency repair before WAL tests could import the persistence layer.
+- 2026-05-13 21:07:00 IST: The original step-5 file list missed `backend/src/memsmith/state/shard_store.py`; durable recovery needs a restore path below the public agent API to avoid appending replayed state back into the WAL.
+- 2026-05-13 21:09:32 IST: The existing scaffold made a clean checkpoint/replay split straightforward because `StateValue` already carried the version needed for exact restore semantics.
+- 2026-05-13 21:13:35 IST: The persisted debug story can be implemented entirely from WAL plus checkpoint metadata; no separate history database or side log was needed for the CLI dump path.
+- 2026-05-13 21:17:12 IST: The planned manual watch command exposed a small packaging gap: without `backend/src/memsmith/__main__.py`, `python -m memsmith ...` could not execute the CLI even though the command handlers themselves were already working.
 
 # Tracker table
 
 | # | Phase | Step | Files | Code | Unit | Integration | Smoke | Perf/Docs | Done |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | Core SDK | Harden SDK contract and event model | `backend/src/memsmith/api.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/session/agent.py`, `backend/src/memsmith/types.py`, `backend/tests/unit/test_public_api.py`, `backend/tests/unit/test_session_flow.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| 2 | State semantics | Implement real sharded store | `backend/src/memsmith/state/shard_store.py`, `backend/src/memsmith/session/manager.py`, `[Create] backend/tests/unit/test_shard_store.py`, `[Create] backend/tests/integration/test_state_semantics.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| 3 | State semantics | Finalize wait and lock behavior | `backend/src/memsmith/state/waiters.py`, `backend/src/memsmith/state/locks.py`, `backend/src/memsmith/session/agent.py`, `[Create] backend/tests/unit/test_waiters.py`, `[Create] backend/tests/unit/test_locks.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| 4 | Reliability | Implement file-backed WAL | `backend/src/memsmith/persistence/wal.py`, `backend/src/memsmith/persistence/paths.py`, `backend/src/memsmith/session/manager.py`, `[Create] backend/tests/unit/test_wal.py`, `[Create] backend/tests/integration/test_wal_flow.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| 5 | Reliability | Implement checkpoints and recovery | `backend/src/memsmith/persistence/checkpoint.py`, `backend/src/memsmith/persistence/recovery.py`, `backend/src/memsmith/api.py`, `backend/examples/crash_recovery.py`, `[Create] backend/tests/integration/test_persistence_recovery.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| 6 | Observability | Implement dump export and CLI | `backend/src/memsmith/observability/history.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/cli/commands/dump.py`, `[Create] backend/tests/unit/test_history_format.py`, `[Create] backend/tests/integration/test_cli_dump.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| 7 | Observability | Implement local watch stream and TUI | `backend/src/memsmith/observability/streams.py`, `[Create] backend/src/memsmith/observability/watch.py`, `backend/src/memsmith/cli/commands/watch.py`, `[Create] backend/tests/integration/test_watch_stream.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+| 1 | Core SDK | Harden SDK contract and event model | `backend/src/memsmith/api.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/session/agent.py`, `backend/src/memsmith/types.py`, `backend/tests/unit/test_public_api.py`, `backend/tests/unit/test_session_flow.py` | [x] | [x] | n/a | [x] | n/a | [x] |
+| 2 | State semantics | Implement real sharded store | `backend/src/memsmith/state/shard_store.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/session/agent.py`, `[Create] backend/tests/unit/test_shard_store.py`, `[Create] backend/tests/integration/test_state_semantics.py` | [x] | [x] | [x] | n/a | n/a | [x] |
+| 3 | State semantics | Finalize wait and lock behavior | `backend/src/memsmith/state/waiters.py`, `backend/src/memsmith/state/locks.py`, `backend/src/memsmith/session/agent.py`, `[Create] backend/tests/unit/test_waiters.py`, `[Create] backend/tests/unit/test_locks.py` | [x] | [x] | n/a | n/a | n/a | [x] |
+| 4 | Reliability | Implement file-backed WAL | `backend/src/memsmith/persistence/wal.py`, `backend/src/memsmith/persistence/paths.py`, `backend/src/memsmith/session/manager.py`, `[Create] backend/tests/unit/test_wal.py`, `[Create] backend/tests/integration/test_wal_flow.py` | [x] | [x] | [x] | n/a | n/a | [x] |
+| 5 | Reliability | Implement checkpoints and recovery | `backend/src/memsmith/persistence/checkpoint.py`, `backend/src/memsmith/persistence/recovery.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/api.py`, `backend/src/memsmith/state/shard_store.py`, `backend/examples/crash_recovery.py`, `[Create] backend/tests/integration/test_persistence_recovery.py` | [x] | n/a | [x] | [x] | n/a | [x] |
+| 6 | Observability | Implement dump export and CLI | `backend/src/memsmith/observability/history.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/cli/commands/dump.py`, `[Create] backend/tests/unit/test_history_format.py`, `[Create] backend/tests/integration/test_cli_dump.py` | [x] | [x] | [x] | n/a | n/a | [x] |
+| 7 | Observability | Implement local watch stream and TUI | `backend/src/memsmith/observability/streams.py`, `[Create] backend/src/memsmith/observability/watch.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/cli/commands/watch.py`, `backend/src/memsmith/__main__.py`, `[Create] backend/tests/integration/test_watch_stream.py` | [x] | n/a | [x] | [x] | n/a | [x] |
 | 8 | Transport | Implement FastAPI server and remote client | `backend/src/memsmith/server/app.py`, `backend/src/memsmith/server/routes/*`, `backend/src/memsmith/server/ws.py`, `[Create] backend/src/memsmith/server/client.py`, `backend/examples/server_mode.py`, `[Create] backend/tests/integration/test_server_transport.py`, `[Create] backend/tests/smoke/test_server_mode.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
 | 9 | Integrations | Implement LangGraph and CrewAI adapters | `backend/src/memsmith/integrations/langgraph.py`, `backend/src/memsmith/integrations/crewai.py`, `backend/src/memsmith/integrations/openai_agents.py`, `[Create] backend/tests/integration/test_integrations.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
 | 10 | OSS polish | Sync docs, examples, and contributor flows | `PRD.md`, `backend/README.md`, `backend/docs/*.md`, `backend/examples/*.py`, `backend/tests/integration/test_layout.py`, `backend/tests/smoke/test_examples.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
