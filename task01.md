@@ -58,6 +58,7 @@ After this plan is executed, a contributor or end user should be able to:
 - 2026-05-13 21:17:54 IST: Completed Step 7. Added runtime stream envelopes, a persisted WAL watch consumer, a minimal `memsmith watch` CLI, and a package `__main__` entrypoint so `python -m memsmith watch ...` works.
 - 2026-05-13 21:27:31 IST: Completed Step 8. Replaced the server route stubs with a real FastAPI app and session registry, added a thin remote HTTP client for `memsmith.connect()`, and verified end-to-end remote push/get/wait behavior plus the server example.
 - 2026-05-13 21:28:40 IST: Completed Step 9. Replaced the placeholder integration seams with thin session-backed adapters for LangGraph, CrewAI, and the optional OpenAI Agents store, and verified they delegate into the same checkpoint-aware core runtime.
+- 2026-05-13 21:32:09 IST: Completed Step 10. Synced the PRD/backend docs to the implemented repo layout and working commands, made the examples accept overridable data directories for isolated smoke runs, and verified the contributor path plus example suite against the real code.
 
 # Scope
 
@@ -834,6 +835,11 @@ Which commands prove it passed:
 - `cd backend && python -m pytest tests/integration/test_layout.py tests/smoke/test_examples.py`
 - `cd backend && python -m compileall src tests examples`
 
+Implementation note after execution:
+
+- The docs now advertise only the commands that actually work today, including `python -m memsmith` after installation and the real example flows.
+- The example entrypoints accept overridable data directories so smoke tests and contributors can run them without cross-test or cross-run state collisions.
+
 # Step-level acceptance criteria
 
 - Step 1 is complete when the public SDK contract is explicit, timestamp-capable history exists, and the local happy path still passes.
@@ -942,6 +948,9 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 - 2026-05-13 21:27:22 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/integration/test_server_transport.py tests/smoke/test_server_mode.py` passed. Result: 2 tests passed covering health/readiness endpoints, remote push/get/wait semantics against a running server, and the server-mode example behavior through actual HTTP transport.
 - 2026-05-13 21:27:31 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashmith/memsmith/.venv/bin/python examples/server_mode.py` passed. Result: printed `connected`, proving the example now starts a temporary local server and uses the remote client over the real transport path.
 - 2026-05-13 21:28:40 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashmith/memsmith/.venv/bin/python -m pytest tests/integration/test_integrations.py` passed. Result: 1 integration test passed proving the LangGraph, CrewAI, and OpenAI Agents adapters all delegate into the shared session/checkpoint behavior instead of re-implementing persistence logic.
+- 2026-05-13 21:31:46 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashmith/memsmith/.venv/bin/python -m pytest tests/integration/test_layout.py tests/smoke/test_examples.py && PYTHONPATH=src /Users/Sameer/Yashmith/memsmith/.venv/bin/python -m compileall src tests examples` passed. Result: 3 tests passed, the documented docs/examples layout matched the repo, the local examples still ran, and the documented contributor path compiled cleanly across source, tests, and examples.
+- 2026-05-13 21:32:09 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashmith/memsmith/.venv/bin/python -m pytest tests/smoke/test_server_mode.py` passed. Result: 1 smoke test passed confirming the docs/example sync did not regress the server transport demo.
+- 2026-05-13 21:33:18 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashmith/memsmith/.venv/bin/python -m pytest` passed. Result: all 28 backend tests passed in one final regression sweep after the full step-by-step implementation.
 
 # Logging / debugging notes
 
@@ -977,6 +986,8 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 - 2026-05-13 21:27:31 IST: Keep the remote transport adapter thin by using the local `Session` runtime as the server-side source of truth and a standard-library HTTP client wrapped with `asyncio.to_thread` on the client side.
 - 2026-05-13 21:27:31 IST: Keep server imports optional by making `memsmith.server` lazy. The remote client does not need FastAPI to exist just to be imported.
 - 2026-05-13 21:28:40 IST: Keep the integration layer boring: adapter objects should only translate framework-specific method names into the existing session API and checkpoint lifecycle, never fork storage or coordination behavior.
+- 2026-05-13 21:32:09 IST: Keep contributor docs honest to the currently implemented surface. Document the working example and CLI paths that are executable today rather than promising unfinished scaffolds like `cli serve`.
+- 2026-05-13 21:32:09 IST: Make examples injectable by data directory so automated smoke tests and humans can reuse them without hidden state coupling.
 
 # Surprises / discoveries
 
@@ -999,6 +1010,7 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 - 2026-05-13 21:25:05 IST: The initial server implementation accidentally made `fastapi` a hard import-time dependency for the whole package because `memsmith.api` reached `memsmith.server.client`, which first executed `memsmith.server.__init__`.
 - 2026-05-13 21:26:31 IST: The old `server.routes` package initializer and a malformed pre-existing `server/schemas.py` tail both surfaced only once the real FastAPI modules were imported, so step 8 needed a small round of local boundary cleanup before the transport tests could run.
 - 2026-05-13 21:28:40 IST: The placeholder integration modules were easier to replace than extend; none of them had real framework coupling yet, so a direct session-backed adapter kept the seam obvious and testable.
+- 2026-05-13 21:32:09 IST: The final docs sync was narrower than expected: the biggest drift was not prose quality but stale commands and the old internal tree in the PRD.
 
 # Tracker table
 
@@ -1013,7 +1025,7 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 | 7 | Observability | Implement local watch stream and TUI | `backend/src/memsmith/observability/streams.py`, `[Create] backend/src/memsmith/observability/watch.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/cli/commands/watch.py`, `backend/src/memsmith/__main__.py`, `[Create] backend/tests/integration/test_watch_stream.py` | [x] | n/a | [x] | [x] | n/a | [x] |
 | 8 | Transport | Implement FastAPI server and remote client | `backend/src/memsmith/server/app.py`, `backend/src/memsmith/server/__init__.py`, `backend/src/memsmith/server/routes/*`, `backend/src/memsmith/server/ws.py`, `[Create] backend/src/memsmith/server/client.py`, `backend/examples/server_mode.py`, `[Create] backend/tests/integration/test_server_transport.py`, `[Create] backend/tests/smoke/test_server_mode.py` | [x] | n/a | [x] | [x] | n/a | [x] |
 | 9 | Integrations | Implement LangGraph and CrewAI adapters | `backend/src/memsmith/integrations/langgraph.py`, `backend/src/memsmith/integrations/crewai.py`, `backend/src/memsmith/integrations/openai_agents.py`, `[Create] backend/tests/integration/test_integrations.py` | [x] | n/a | [x] | n/a | n/a | [x] |
-| 10 | OSS polish | Sync docs, examples, and contributor flows | `PRD.md`, `backend/README.md`, `backend/docs/*.md`, `backend/examples/*.py`, `backend/tests/integration/test_layout.py`, `backend/tests/smoke/test_examples.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+| 10 | OSS polish | Sync docs, examples, and contributor flows | `PRD.md`, `backend/README.md`, `backend/docs/*.md`, `backend/examples/*.py`, `backend/tests/integration/test_layout.py`, `backend/tests/smoke/test_examples.py` | [x] | n/a | [x] | [x] | [x] | [x] |
 
 # Open questions / risks
 
