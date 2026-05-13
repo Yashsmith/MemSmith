@@ -7,17 +7,27 @@ The first PR path should be obvious.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+pip install -e ".[dev]"
 pytest tests/unit
+pytest tests/integration
+pytest tests/smoke
+python -m compileall src tests examples
 ```
 
-## Good first contribution areas
+Install optional extras only when you are touching those surfaces:
 
-- tighten state version semantics
-- add real sharding behind `state/shard_store.py`
-- implement on-disk WAL in `persistence/wal.py`
-- build dump formatting in `observability/history.py`
-- replace the server scaffold with FastAPI routes in `server/`
+```bash
+pip install -e ".[server]"
+pip install -e ".[watch]"
+```
+
+## Good next contribution areas
+
+- deepen `memsmith watch` into a richer Textual UI on top of `observability/watch.py`
+- add remote watch client coverage over the WebSocket endpoint in `server/ws.py`
+- turn `cli/commands/serve.py` into a real server launcher over `server/app.py`
+- expand integration coverage and examples around the session-backed adapters
+- tighten docs and contributor onboarding as the CLI surface grows
 
 ## Rules of the repo
 

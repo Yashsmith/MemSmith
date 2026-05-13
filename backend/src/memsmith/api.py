@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from memsmith.server.client import RemoteSession
 from memsmith.session.manager import Session
 
 
@@ -17,7 +18,7 @@ async def connect(name: str, *, host: str) -> Session:
 
     This scaffold keeps the same return type as local sessions so the SDK stays stable.
     """
-    return Session(name=name, remote_host=host, transport="remote")
+    return RemoteSession(name=name, remote_host=host)
 
 
 async def resume(name: str, *, data_dir: str | Path | None = None) -> Session:

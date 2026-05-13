@@ -56,6 +56,8 @@ After this plan is executed, a contributor or end user should be able to:
 - 2026-05-13 21:09:32 IST: Completed Step 5. Added checkpoint snapshot serialization plus JSON sidecars, store restore helpers, real `resume()` recovery with WAL replay after the latest checkpoint, and verified restored state through integration and smoke paths.
 - 2026-05-13 21:13:35 IST: Completed Step 6. Added timestamp-aware dump formatting, JSON history serialization with rendered lines, and a real `memsmith dump` CLI that reads persisted session history from WAL/checkpoint artifacts.
 - 2026-05-13 21:17:54 IST: Completed Step 7. Added runtime stream envelopes, a persisted WAL watch consumer, a minimal `memsmith watch` CLI, and a package `__main__` entrypoint so `python -m memsmith watch ...` works.
+- 2026-05-13 21:27:31 IST: Completed Step 8. Replaced the server route stubs with a real FastAPI app and session registry, added a thin remote HTTP client for `memsmith.connect()`, and verified end-to-end remote push/get/wait behavior plus the server example.
+- 2026-05-13 21:28:40 IST: Completed Step 9. Replaced the placeholder integration seams with thin session-backed adapters for LangGraph, CrewAI, and the optional OpenAI Agents store, and verified they delegate into the same checkpoint-aware core runtime.
 
 # Scope
 
@@ -716,6 +718,7 @@ Why this exists:
 Files to change:
 
 - `backend/src/memsmith/server/app.py`
+- `backend/src/memsmith/server/__init__.py`
 - `backend/src/memsmith/server/schemas.py`
 - `backend/src/memsmith/server/routes/health.py`
 - `backend/src/memsmith/server/routes/sessions.py`
@@ -750,6 +753,11 @@ Which commands prove it passed:
 - `cd backend && python -m pytest tests/integration/test_server_transport.py tests/smoke/test_server_mode.py`
 - `cd backend && python examples/server_mode.py`
 
+Implementation note after execution:
+
+- `backend/pyproject.toml` already declared the optional `server` dependencies, so the step only needed environment installation, not package metadata changes.
+- `backend/src/memsmith/server/__init__.py` had to become lazy so importing `memsmith` does not eagerly require FastAPI when server extras are not installed.
+
 ## Step 9 — Implement thin LangGraph and CrewAI adapters
 
 Why this exists:
@@ -780,6 +788,10 @@ What will be verified:
 Which commands prove it passed:
 
 - `cd backend && python -m pytest tests/integration/test_integrations.py`
+
+Implementation note after execution:
+
+- OpenAI Agents support stayed intentionally thin and optional; it uses the same session-backed pattern as the LangGraph and CrewAI adapters without introducing any extra framework dependency.
 
 ## Step 10 — Sync docs, examples, and contributor flows
 
@@ -925,6 +937,11 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 - 2026-05-13 21:13:35 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/unit/test_session_flow.py` passed. Result: 3 tests passed confirming the updated `Session.export()` path preserved the existing local session flow and JSON history export behavior.
 - 2026-05-13 21:16:30 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/integration/test_watch_stream.py` passed. Result: 2 tests passed covering in-process stream ordering for lock/push/broadcast flows and persisted WAL observation for the local watch consumer.
 - 2026-05-13 21:17:54 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m memsmith watch cli-watch --data-dir <tmpdir> --limit 2 --idle-timeout-ms 500` passed after creating a temporary persisted session. Result: the CLI printed live watch lines for `PUSH` and `BROADCAST` events through the package entrypoint.
+- 2026-05-13 21:25:05 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/integration/test_server_transport.py tests/smoke/test_server_mode.py` failed during collection because `fastapi` was not installed and the initial server package import boundary still pulled it in eagerly.
+- 2026-05-13 21:25:33 IST: Installed missing step-8 server dependencies with `install_python_packages` for `fastapi` and `uvicorn`.
+- 2026-05-13 21:27:22 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashsmith/memsmith/.venv/bin/python -m pytest tests/integration/test_server_transport.py tests/smoke/test_server_mode.py` passed. Result: 2 tests passed covering health/readiness endpoints, remote push/get/wait semantics against a running server, and the server-mode example behavior through actual HTTP transport.
+- 2026-05-13 21:27:31 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashmith/memsmith/.venv/bin/python examples/server_mode.py` passed. Result: printed `connected`, proving the example now starts a temporary local server and uses the remote client over the real transport path.
+- 2026-05-13 21:28:40 IST: `cd backend && PYTHONPATH=src /Users/Sameer/Yashmith/memsmith/.venv/bin/python -m pytest tests/integration/test_integrations.py` passed. Result: 1 integration test passed proving the LangGraph, CrewAI, and OpenAI Agents adapters all delegate into the shared session/checkpoint behavior instead of re-implementing persistence logic.
 
 # Logging / debugging notes
 
@@ -957,6 +974,9 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 - 2026-05-13 21:13:35 IST: Keep JSON history export as a list of structured event objects, but add a rendered `line` field so the same artifact is both machine-readable and quick to inspect by hand.
 - 2026-05-13 21:17:54 IST: Split watch into two seams: `Session.record_event()` emits non-blocking in-process `StreamEnvelope`s for exact ordering, while the CLI tails the persisted WAL so `watch` already works across processes before server mode lands.
 - 2026-05-13 21:17:54 IST: Keep the watch UI intentionally line-oriented for now. The stable contract is the stream envelope and consumer path; a richer TUI can build on that seam later without changing the runtime.
+- 2026-05-13 21:27:31 IST: Keep the remote transport adapter thin by using the local `Session` runtime as the server-side source of truth and a standard-library HTTP client wrapped with `asyncio.to_thread` on the client side.
+- 2026-05-13 21:27:31 IST: Keep server imports optional by making `memsmith.server` lazy. The remote client does not need FastAPI to exist just to be imported.
+- 2026-05-13 21:28:40 IST: Keep the integration layer boring: adapter objects should only translate framework-specific method names into the existing session API and checkpoint lifecycle, never fork storage or coordination behavior.
 
 # Surprises / discoveries
 
@@ -976,6 +996,9 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 - 2026-05-13 21:09:32 IST: The existing scaffold made a clean checkpoint/replay split straightforward because `StateValue` already carried the version needed for exact restore semantics.
 - 2026-05-13 21:13:35 IST: The persisted debug story can be implemented entirely from WAL plus checkpoint metadata; no separate history database or side log was needed for the CLI dump path.
 - 2026-05-13 21:17:12 IST: The planned manual watch command exposed a small packaging gap: without `backend/src/memsmith/__main__.py`, `python -m memsmith ...` could not execute the CLI even though the command handlers themselves were already working.
+- 2026-05-13 21:25:05 IST: The initial server implementation accidentally made `fastapi` a hard import-time dependency for the whole package because `memsmith.api` reached `memsmith.server.client`, which first executed `memsmith.server.__init__`.
+- 2026-05-13 21:26:31 IST: The old `server.routes` package initializer and a malformed pre-existing `server/schemas.py` tail both surfaced only once the real FastAPI modules were imported, so step 8 needed a small round of local boundary cleanup before the transport tests could run.
+- 2026-05-13 21:28:40 IST: The placeholder integration modules were easier to replace than extend; none of them had real framework coupling yet, so a direct session-backed adapter kept the seam obvious and testable.
 
 # Tracker table
 
@@ -988,8 +1011,8 @@ python -m memsmith serve --host 127.0.0.1 --port 7117
 | 5 | Reliability | Implement checkpoints and recovery | `backend/src/memsmith/persistence/checkpoint.py`, `backend/src/memsmith/persistence/recovery.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/api.py`, `backend/src/memsmith/state/shard_store.py`, `backend/examples/crash_recovery.py`, `[Create] backend/tests/integration/test_persistence_recovery.py` | [x] | n/a | [x] | [x] | n/a | [x] |
 | 6 | Observability | Implement dump export and CLI | `backend/src/memsmith/observability/history.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/cli/commands/dump.py`, `[Create] backend/tests/unit/test_history_format.py`, `[Create] backend/tests/integration/test_cli_dump.py` | [x] | [x] | [x] | n/a | n/a | [x] |
 | 7 | Observability | Implement local watch stream and TUI | `backend/src/memsmith/observability/streams.py`, `[Create] backend/src/memsmith/observability/watch.py`, `backend/src/memsmith/session/manager.py`, `backend/src/memsmith/cli/commands/watch.py`, `backend/src/memsmith/__main__.py`, `[Create] backend/tests/integration/test_watch_stream.py` | [x] | n/a | [x] | [x] | n/a | [x] |
-| 8 | Transport | Implement FastAPI server and remote client | `backend/src/memsmith/server/app.py`, `backend/src/memsmith/server/routes/*`, `backend/src/memsmith/server/ws.py`, `[Create] backend/src/memsmith/server/client.py`, `backend/examples/server_mode.py`, `[Create] backend/tests/integration/test_server_transport.py`, `[Create] backend/tests/smoke/test_server_mode.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| 9 | Integrations | Implement LangGraph and CrewAI adapters | `backend/src/memsmith/integrations/langgraph.py`, `backend/src/memsmith/integrations/crewai.py`, `backend/src/memsmith/integrations/openai_agents.py`, `[Create] backend/tests/integration/test_integrations.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
+| 8 | Transport | Implement FastAPI server and remote client | `backend/src/memsmith/server/app.py`, `backend/src/memsmith/server/__init__.py`, `backend/src/memsmith/server/routes/*`, `backend/src/memsmith/server/ws.py`, `[Create] backend/src/memsmith/server/client.py`, `backend/examples/server_mode.py`, `[Create] backend/tests/integration/test_server_transport.py`, `[Create] backend/tests/smoke/test_server_mode.py` | [x] | n/a | [x] | [x] | n/a | [x] |
+| 9 | Integrations | Implement LangGraph and CrewAI adapters | `backend/src/memsmith/integrations/langgraph.py`, `backend/src/memsmith/integrations/crewai.py`, `backend/src/memsmith/integrations/openai_agents.py`, `[Create] backend/tests/integration/test_integrations.py` | [x] | n/a | [x] | n/a | n/a | [x] |
 | 10 | OSS polish | Sync docs, examples, and contributor flows | `PRD.md`, `backend/README.md`, `backend/docs/*.md`, `backend/examples/*.py`, `backend/tests/integration/test_layout.py`, `backend/tests/smoke/test_examples.py` | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
 
 # Open questions / risks

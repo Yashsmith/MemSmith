@@ -12,6 +12,25 @@ The goal is contributor ergonomics, not architecture theater:
 - framework adapters live in `src/memsmith/integrations/`
 - tests mirror those boundaries under `tests/`
 
+## Quickstart
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+python examples/two_agents.py
+python examples/crash_recovery.py
+python -m memsmith dump two-agent-demo --data-dir .memsmith-examples
+python -m memsmith watch two-agent-demo --data-dir .memsmith-examples --limit 1
+```
+
+Install the optional server extras when you want the transport demo:
+
+```bash
+pip install -e ".[server]"
+python examples/server_mode.py
+```
+
 ## Layout
 
 ```text
@@ -36,3 +55,6 @@ backend/
 - `src/memsmith/session/manager.py`: session lifecycle and shared state wiring
 - `src/memsmith/session/agent.py`: agent-facing API surface
 - `src/memsmith/state/`: low-level coordination primitives
+- `src/memsmith/persistence/`: WAL, checkpoints, and recovery
+- `src/memsmith/observability/`: dump/watch formatting and stream consumers
+- `src/memsmith/server/`: FastAPI app and the remote client used by `connect()`

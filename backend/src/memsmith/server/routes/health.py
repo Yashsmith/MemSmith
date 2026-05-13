@@ -1,8 +1,17 @@
-"""Health and readiness route descriptions."""
+"""Health and readiness routes."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter
+
+router = APIRouter()
 
 
-def health_routes() -> list[tuple[str, str, str]]:
-    return [
-        ("GET", "/health", "Process heartbeat"),
-        ("GET", "/ready", "Dependency readiness"),
-    ]
+@router.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@router.get("/ready")
+async def ready() -> dict[str, str]:
+    return {"status": "ready"}

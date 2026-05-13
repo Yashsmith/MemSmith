@@ -6,8 +6,8 @@ from pathlib import Path
 import memsmith
 
 
-async def main() -> str | None:
-    data_dir = Path(".memsmith-examples")
+async def main(*, data_dir: Path | None = None) -> str | None:
+    data_dir = data_dir or Path(".memsmith-examples")
     session = memsmith.session("recovery-demo", data_dir=data_dir)
     try:
         await session.agent("researcher").push("status", "checkpointed")

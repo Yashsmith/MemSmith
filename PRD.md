@@ -230,26 +230,38 @@ The architecture from v2 is preserved. The implementation changes are minimal. T
 ### 7.1 Core Engine
 
 ```
-memsmith/
-├── core/
-│   ├── session.py          # Session object — primary user entrypoint
-│   ├── agent_context.py    # Agent-scoped API (push, wait_for, lock)
-│   ├── shard_store.py      # Sharded in-memory dict (16 shards, asyncio.Lock per shard)
-│   ├── wal.py              # Async Write-Ahead Log — background thread, append-only
-│   ├── checkpoint.py       # Snapshot serialization using msgspec + msgpack
-│   └── recovery.py         # Resume from checkpoint or WAL replay
-├── server/
-│   ├── app.py              # FastAPI app — only used in multi-process mode
-│   ├── routes.py           # HTTP endpoints (internal, not primary API)
-│   └── ws.py               # WebSocket endpoint for `memsmith watch` remote mode
-├── cli/
-│   ├── main.py             # Click CLI
-│   ├── watch.py            # Textual TUI for live state visualization
-│   └── dump.py             # Human-readable session replay export
-└── integrations/
-    ├── langchain.py        # MemSmithCheckpointer for LangGraph
-    ├── crewai.py           # MemSmithMemory for CrewAI
-    └── openai_sdk.py       # MemSmithStore for OpenAI Agents SDK
+backend/
+├── src/memsmith/
+│   ├── api.py              # Public constructors: session, connect, resume
+│   ├── session/
+│   │   ├── manager.py      # Session lifecycle, history, checkpoint wiring
+│   │   └── agent.py        # Agent-scoped API (push, wait_for, lock)
+│   ├── state/
+│   │   ├── shard_store.py  # Sharded in-memory dict and snapshot restore
+│   │   ├── locks.py        # Session-scoped lock registry
+│   │   └── waiters.py      # Version-aware wait coordination
+│   ├── persistence/
+│   │   ├── wal.py          # File-backed WAL with background flush thread
+│   │   ├── checkpoint.py   # Binary + JSON checkpoint serialization
+│   │   └── recovery.py     # Resume planning and WAL replay helpers
+│   ├── observability/
+│   │   ├── history.py      # Dump formatting + JSON export helpers
+│   │   ├── streams.py      # Stable stream envelope shape
+│   │   └── watch.py        # Local watch consumers over runtime/WAL events
+│   ├── server/
+│   │   ├── app.py          # FastAPI app + session registry
+│   │   ├── client.py       # Thin remote session adapter for connect()
+│   │   ├── routes/         # HTTP routes for health, session ops, and history
+│   │   └── ws.py           # WebSocket endpoint for remote watch mode
+│   ├── cli/
+│   │   ├── main.py         # CLI entrypoint
+│   │   └── commands/       # dump/watch/serve command wrappers
+│   └── integrations/
+│       ├── langgraph.py    # MemSmithCheckpointer adapter
+│       ├── crewai.py       # MemSmithMemory adapter
+│       └── openai_agents.py# MemSmithStore adapter
+├── examples/               # Two-agent, recovery, and server transport demos
+└── tests/                  # unit, integration, and smoke coverage
 ```
 
 ### 7.2 Sharded Store (Unchanged from v2, renamed for clarity)

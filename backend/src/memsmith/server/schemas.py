@@ -1,20 +1,34 @@
-"""Schema placeholders for the HTTP transport."""
+"""Request and response schemas for server mode."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
+from pydantic import BaseModel
 
-@dataclass(slots=True, frozen=True)
-class PushStateRequest:
-    session: str
-    agent: str
-    key: str
+
+class PushRequest(BaseModel):
     value: Any
 
 
-@dataclass(slots=True, frozen=True)
-class LockResponse:
-    locked: bool
-    held_by: str | None = None
+class BroadcastRequest(BaseModel):
+    payload: Any | None = None
+
+
+class WaitRequest(BaseModel):
+    after_version: int | None = None
+    timeout_ms: int = 30_000
+
+
+class LockRequest(BaseModel):
+    timeout_ms: int = 5_000
+
+
+class StateResponse(BaseModel):
+    value: Any | None = None
+    version: int = 0
+
+
+class CheckpointResponse(BaseModel):
+    label: str
+    path: str

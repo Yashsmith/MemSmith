@@ -5,6 +5,7 @@ Use this file to answer the contributor questions quickly.
 ## Where does the app start?
 
 - Python package entrypoint: `src/memsmith/api.py`
+- Module entrypoint: `src/memsmith/__main__.py`
 - CLI entrypoint: `src/memsmith/cli/main.py`
 - Server entrypoint: `src/memsmith/server/app.py`
 
@@ -13,7 +14,9 @@ Use this file to answer the contributor questions quickly.
 1. `memsmith.session(...)` creates a `Session`.
 2. `Session.agent(...)` returns an `AgentContext`.
 3. `AgentContext` delegates to `state/` primitives.
-4. Persistence and observability sit next to that flow instead of hiding behind service layers.
+4. `session/manager.py` records history, appends WAL entries, and publishes watch envelopes.
+5. Persistence and observability sit next to that flow instead of hiding behind service layers.
+6. `memsmith.connect(...)` returns `server/client.py`, which talks to the FastAPI app while keeping the same high-level session shape.
 
 ## Where should I add feature X?
 
@@ -32,6 +35,17 @@ Run unit tests first. They should stay fast and local.
 pytest tests/unit
 pytest tests/integration
 pytest tests/smoke
+python -m compileall src tests examples
+```
+
+## What commands actually work today?
+
+```bash
+python examples/two_agents.py
+python examples/crash_recovery.py
+python -m memsmith dump two-agent-demo --data-dir .memsmith-examples
+python -m memsmith watch two-agent-demo --data-dir .memsmith-examples --limit 1
+python examples/server_mode.py
 ```
 
 ## What breaks if I change this?
