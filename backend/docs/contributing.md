@@ -19,7 +19,17 @@ Install optional extras only when you are touching those surfaces:
 ```bash
 pip install -e ".[server]"
 pip install -e ".[watch]"
+pip install -e ".[llm]"
 ```
+
+Run the live LLM benchmark suite only when you want provider-backed verification:
+
+```bash
+RUN_LITELLM_MULTIAGENT_SMOKE=1 MEMSMITH_LITELLM_MODELS="groq/llama-3.3-70b-versatile" PYTHONPATH=src ../.venv/bin/python -m pytest tests/Multiagent_test -q -s
+```
+
+That suite prints a clean report to stdout and stores the watch, dump, history,
+checkpoint, WAL, and quality-comparison artifacts under `tests/Multiagent_test/results/`.
 
 ## Good next contribution areas
 
@@ -27,6 +37,7 @@ pip install -e ".[watch]"
 - add remote watch client coverage over the WebSocket endpoint in `server/ws.py`
 - turn `cli/commands/serve.py` into a real server launcher over `server/app.py`
 - expand integration coverage and examples around the session-backed adapters
+- expand the live LiteLLM benchmark matrix with more coordination scenarios
 - tighten docs and contributor onboarding as the CLI surface grows
 
 ## Rules of the repo

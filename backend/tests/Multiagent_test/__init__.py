@@ -1,1 +1,1 @@
-"""Opt-in live multi-agent benchmark tests."""
+"""Opt-in live LiteLLM multi-agent benchmark tests."""

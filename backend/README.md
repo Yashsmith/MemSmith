@@ -31,6 +31,17 @@ pip install -e ".[server]"
 python examples/server_mode.py
 ```
 
+Install the optional LiteLLM extra when you want the live multi-model benchmark suite:
+
+```bash
+pip install -e ".[llm]"
+RUN_LITELLM_MULTIAGENT_SMOKE=1 MEMSMITH_LITELLM_MODELS="groq/llama-3.3-70b-versatile" PYTHONPATH=src ../.venv/bin/python -m pytest tests/Multiagent_test -q -s
+```
+
+That suite compares MemSmith coordination against a plain `asyncio` baseline while
+capturing watch, dump, checkpoint, WAL, resume, and deterministic output-quality data.
+See `docs/llm-benchmark-suite.md` for the full guide.
+
 ## Layout
 
 ```text

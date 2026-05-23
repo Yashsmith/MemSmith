@@ -38,6 +38,13 @@ pytest tests/smoke
 python -m compileall src tests examples
 ```
 
+Run the live LLM benchmark suite only when you want provider-backed coverage of the
+MemSmith coordination and explainability surface:
+
+```bash
+RUN_LITELLM_MULTIAGENT_SMOKE=1 MEMSMITH_LITELLM_MODELS="groq/llama-3.3-70b-versatile" PYTHONPATH=src ../.venv/bin/python -m pytest tests/Multiagent_test -q -s
+```
+
 ## What commands actually work today?
 
 ```bash
@@ -47,6 +54,10 @@ python -m memsmith dump two-agent-demo --data-dir .memsmith-examples
 python -m memsmith watch two-agent-demo --data-dir .memsmith-examples --limit 1
 python examples/server_mode.py
 ```
+
+The live benchmark suite entrypoint lives in `tests/Multiagent_test/` and uses LiteLLM
+to compare MemSmith coordination against a manual baseline while saving watch, dump,
+checkpoint, WAL, resume, transcript, and quality-report artifacts.
 
 ## What breaks if I change this?
 
