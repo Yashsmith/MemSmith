@@ -8,3 +8,5 @@ build/
 dist/
 *.pyc
 .memsmith/
+.env
+tests/Multiagent_test/results/
