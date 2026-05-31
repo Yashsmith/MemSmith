@@ -28,6 +28,7 @@ Install the optional server extras when you want the transport demo:
 
 ```bash
 pip install -e ".[server]"
+python -m memsmith serve --host 127.0.0.1 --port 7117 --data-dir .memsmith-examples
 python examples/server_mode.py
 ```
 
@@ -41,6 +42,14 @@ RUN_LITELLM_MULTIAGENT_SMOKE=1 MEMSMITH_LITELLM_MODELS="groq/llama-3.3-70b-versa
 That suite compares MemSmith coordination against a plain `asyncio` baseline while
 capturing watch, dump, checkpoint, WAL, resume, and deterministic output-quality data.
 See `docs/llm-benchmark-suite.md` for the full guide.
+
+`memsmith dump` reconstructs persisted timelines from the WAL and checkpoints.
+`memsmith watch` renders a grouped terminal view from the same persisted stream so
+agent reads, waits, locks, broadcasts, and checkpoints stay visible after the run.
+
+The adapters under `src/memsmith/integrations/` are lightweight session-backed
+wrappers. Framework-native LangGraph and CrewAI drop-in compatibility, plus
+semantic TTL, are intentionally deferred P2 work.
 
 ## Layout
 

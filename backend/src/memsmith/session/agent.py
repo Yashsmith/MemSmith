@@ -40,7 +40,7 @@ class AgentContext:
         state = self.session.store.get(full_key)
         if state is None:
             return None
-        self.session.record_event(
+        self.session.record_persisted_event(
             "GET",
             agent=self.name,
             key=full_key,
@@ -57,10 +57,16 @@ class AgentContext:
         timeout_ms: int = 30_000,
     ) -> Any:
         full_key = self.session.state_key(source_agent, key)
+        self.session.record_persisted_event(
+            "WAIT_FOR",
+            agent=self.name,
+            key=full_key,
+            value={"after_version": after_version, "timeout_ms": timeout_ms},
+        )
         current = self.session.store.get(full_key)
 
         if current is not None and (after_version is None or current.version > after_version):
-            self.session.record_event(
+            self.session.record_persisted_event(
                 "WAIT_FOR_RESOLVE",
                 agent=self.name,
                 key=full_key,
@@ -81,17 +87,29 @@ class AgentContext:
                     timeout=timeout_ms / 1000,
                 )
         except TimeoutError as exc:
+            self.session.record_persisted_event(
+                "WAIT_FOR_TIMEOUT",
+                agent=self.name,
+                key=full_key,
+                value={"after_version": after_version, "timeout_ms": timeout_ms},
+            )
             raise MemSmithTimeoutError(
                 f"Timed out waiting for agent '{source_agent}' to push '{key}'."
             ) from exc
 
         result = self.session.store.get(full_key)
         if result is None:
+            self.session.record_persisted_event(
+                "WAIT_FOR_TIMEOUT",
+                agent=self.name,
+                key=full_key,
+                value={"after_version": after_version, "timeout_ms": timeout_ms},
+            )
             raise MemSmithTimeoutError(
                 f"Agent '{source_agent}' notified waiters for '{key}' without storing data."
             )
 
-        self.session.record_event(
+        self.session.record_persisted_event(
             "WAIT_FOR_RESOLVE",
             agent=self.name,
             key=full_key,
@@ -103,13 +121,33 @@ class AgentContext:
     @asynccontextmanager
     async def lock(self, key: str, timeout_ms: int = 5_000) -> AsyncIterator[LockInfo]:
         full_key = self.session.lock_key(self.name, key)
-        lock_info = await self.session.locks.acquire(full_key, owner=self.name, timeout_ms=timeout_ms)
-        self.session.record_event("LOCK_ACQUIRE", agent=self.name, key=full_key, value=lock_info.token)
+        try:
+            lock_info = await self.session.locks.acquire(
+                full_key,
+                owner=self.name,
+                timeout_ms=timeout_ms,
+            )
+        except MemSmithTimeoutError:
+            status = self.session.locks.status(full_key)
+            self.session.record_persisted_event(
+                "LOCK_TIMEOUT",
+                agent=self.name,
+                key=full_key,
+                value={"held_by": status.held_by, "timeout_ms": timeout_ms},
+            )
+            raise
+
+        self.session.record_persisted_event(
+            "LOCK_ACQUIRE",
+            agent=self.name,
+            key=full_key,
+            value=lock_info.token,
+        )
         try:
             yield lock_info
         finally:
             self.session.locks.release(full_key, owner=self.name)
-            self.session.record_event("LOCK_RELEASE", agent=self.name, key=full_key)
+            self.session.record_persisted_event("LOCK_RELEASE", agent=self.name, key=full_key)
 
     async def try_lock(self, key: str) -> LockInfo:
         full_key = self.session.lock_key(self.name, key)

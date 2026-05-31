@@ -27,6 +27,33 @@ def format_event(event: HistoryEvent, *, session_start_ns: int) -> str:
 
     actor = "SESSION" if event.agent == "session" else event.agent
     suffix = _format_suffix(event)
+
+    if event.operation == "GET":
+        version = f" v{event.version}" if event.version else ""
+        return f"[{elapsed}] {actor:<10} <- GET {event.key}{version}{suffix}".rstrip()
+
+    if event.operation == "WAIT_FOR":
+        return f"[{elapsed}] {actor:<10} -> WAIT_FOR {event.key}{suffix}".rstrip()
+
+    if event.operation == "WAIT_FOR_RESOLVE":
+        version = f" v{event.version}" if event.version else ""
+        return f"[{elapsed}] {actor:<10} <- WAIT_FOR_RESOLVE {event.key}{version}{suffix}".rstrip()
+
+    if event.operation == "WAIT_FOR_TIMEOUT":
+        return f"[{elapsed}] {actor:<10} !! WAIT_FOR_TIMEOUT {event.key}{suffix}".rstrip()
+
+    if event.operation == "LOCK_ACQUIRE":
+        return f"[{elapsed}] {actor:<10} -> LOCK_ACQUIRE {event.key}{suffix}".rstrip()
+
+    if event.operation == "LOCK_RELEASE":
+        return f"[{elapsed}] {actor:<10} -> LOCK_RELEASE {event.key}".rstrip()
+
+    if event.operation == "LOCK_TIMEOUT":
+        return f"[{elapsed}] {actor:<10} !! LOCK_TIMEOUT {event.key}{suffix}".rstrip()
+
+    if event.operation == "BROADCAST":
+        return f"[{elapsed}] {actor:<10} -> BROADCAST {event.key}{suffix}".rstrip()
+
     version = f" v{event.version}" if event.version else ""
     return f"[{elapsed}] {actor:<10} -> {event.operation} {event.key}{version}{suffix}".rstrip()
 
@@ -138,6 +165,17 @@ def history_from_wal(
 
 def _display_actor_and_key(entry: WALEntry) -> tuple[str, str]:
     if entry.operation == "PUSH" and ":" in entry.key:
+        agent, key = entry.key.split(":", 1)
+        return agent, key
+    if entry.operation in {
+        "GET",
+        "WAIT_FOR",
+        "WAIT_FOR_RESOLVE",
+        "WAIT_FOR_TIMEOUT",
+        "LOCK_ACQUIRE",
+        "LOCK_RELEASE",
+        "LOCK_TIMEOUT",
+    } and ":" in entry.key:
         agent, key = entry.key.split(":", 1)
         return agent, key
     if entry.operation == "CHECKPOINT" and isinstance(entry.value, dict):

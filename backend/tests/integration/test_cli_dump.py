@@ -13,6 +13,11 @@ def test_dump_command_prints_persisted_timeline_and_exports_json(tmp_path: Path,
         session = memsmith.session("cli-dump", data_dir=tmp_path)
         try:
             await session.agent("researcher").push("papers", ["paper-a"])
+            await session.agent("researcher").get("papers")
+            await session.agent("writer").wait_for("researcher", "papers")
+            async with session.agent("writer").lock("draft"):
+                await session.agent("writer").push("draft", "ready")
+            await session.broadcast("pipeline_complete")
             await session.checkpoint("after-first")
             session.flush_wal()
         finally:
@@ -28,6 +33,11 @@ def test_dump_command_prints_persisted_timeline_and_exports_json(tmp_path: Path,
     assert "MemSmith Session Dump: cli-dump" in captured.out
     assert "SESSION START" in captured.out
     assert "researcher -> PUSH papers" in captured.out
+    assert "researcher <- GET researcher:papers" in captured.out
+    assert "writer     -> WAIT_FOR researcher:papers" in captured.out
+    assert "writer     <- WAIT_FOR_RESOLVE researcher:papers" in captured.out
+    assert "writer     -> LOCK_ACQUIRE draft" in captured.out
+    assert "SESSION    -> BROADCAST pipeline_complete" in captured.out
     assert "CHECKPOINT -> Saved to" in captured.out
 
     payload = json.loads(json_out.read_text(encoding="utf-8"))

@@ -150,11 +150,16 @@ class RemoteAgentContext:
 
     @asynccontextmanager
     async def lock(self, key: str, timeout_ms: int = 5_000) -> AsyncIterator[LockInfo]:
-        payload = await self.session._request_json(
-            "POST",
-            f"/sessions/{_quote(self.session.name)}/locks/{_quote(self.name)}/{_quote(key)}",
-            payload={"timeout_ms": timeout_ms},
-        )
+        try:
+            payload = await self.session._request_json(
+                "POST",
+                f"/sessions/{_quote(self.session.name)}/locks/{_quote(self.name)}/{_quote(key)}",
+                payload={"timeout_ms": timeout_ms},
+            )
+        except RuntimeError as exc:
+            if "408" in str(exc):
+                raise MemSmithTimeoutError(str(exc)) from exc
+            raise
         lock_info = LockInfo(**payload)
         try:
             yield lock_info

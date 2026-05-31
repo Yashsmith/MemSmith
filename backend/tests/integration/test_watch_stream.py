@@ -4,7 +4,7 @@ import asyncio
 from pathlib import Path
 
 import memsmith
-from memsmith.observability.watch import PersistedWatchConsumer, subscribe
+from memsmith.observability.watch import PersistedWatchConsumer, render_watch, subscribe
 
 
 def test_runtime_watch_stream_preserves_event_order_for_lock_push_broadcast(tmp_path: Path) -> None:
@@ -45,3 +45,30 @@ def test_persisted_watch_consumer_reads_new_wal_events(tmp_path: Path) -> None:
 
     operations = asyncio.run(scenario())
     assert operations == ["PUSH", "BROADCAST"]
+
+
+def test_persisted_watch_render_groups_wait_and_lock_events_by_actor(tmp_path: Path) -> None:
+    async def scenario() -> str:
+        session = memsmith.session("watch-render", data_dir=tmp_path)
+        consumer = PersistedWatchConsumer(session_name="watch-render", data_dir=tmp_path)
+        try:
+            await session.agent("researcher").push("papers", ["paper-a"])
+            await session.agent("writer").wait_for("researcher", "papers")
+            async with session.agent("writer").lock("draft"):
+                await session.agent("writer").push("draft", "ready")
+            await session.broadcast("pipeline_complete")
+            session.flush_wal()
+            envelopes = await consumer.collect(limit=7, idle_timeout_ms=500)
+            return render_watch("watch-render", envelopes)
+        finally:
+            session.close()
+
+    rendered = asyncio.run(scenario())
+
+    assert "Events: 7 | Agents: 2 (researcher, writer)" in rendered
+    assert "[researcher]" in rendered
+    assert "[writer]" in rendered
+    assert "[SESSION]" in rendered
+    assert "writer     -> WAIT_FOR researcher:papers" in rendered
+    assert "writer     -> LOCK_ACQUIRE draft" in rendered
+    assert "SESSION    -> BROADCAST pipeline_complete" in rendered

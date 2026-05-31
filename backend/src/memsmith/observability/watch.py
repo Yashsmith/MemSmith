@@ -3,14 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
-
-try:
-    from rich.console import Console
-except ImportError:  # pragma: no cover - optional dependency path
-    Console = None  # type: ignore[assignment]
 
 from memsmith.observability.history import format_event
 from memsmith.observability.streams import StreamEnvelope
@@ -89,18 +84,45 @@ class PersistedWatchConsumer:
             await asyncio.sleep(poll_interval_ms / 1000)
 
 
+@dataclass(slots=True)
+class WatchSnapshot:
+    """Structured watch view grouped by actor."""
+
+    session_name: str
+    columns: dict[str, list[HistoryEvent]] = field(default_factory=dict)
+    total_events: int = 0
+
+    @property
+    def agents(self) -> list[str]:
+        return [name for name in self.columns if name != "SESSION"]
+
+
+def build_watch_snapshot(session_name: str, envelopes: list[StreamEnvelope]) -> WatchSnapshot:
+    snapshot = WatchSnapshot(session_name=session_name, total_events=len(envelopes))
+    for envelope in envelopes:
+        actor = "SESSION" if envelope.event.agent == "session" else envelope.event.agent
+        snapshot.columns.setdefault(actor, []).append(envelope.event)
+    return snapshot
+
+
 def render_watch(session_name: str, envelopes: list[StreamEnvelope]) -> str:
-    header = [f"MemSmith Watch: {session_name}", "-" * 41]
+    snapshot = build_watch_snapshot(session_name, envelopes)
+    agents = ", ".join(snapshot.agents) if snapshot.agents else "none"
+    header = [
+        f"MemSmith Watch: {session_name}",
+        f"Events: {snapshot.total_events} | Agents: {len(snapshot.agents)} ({agents})",
+        "-" * 41,
+    ]
     if not envelopes:
         return "\n".join([*header, "No events observed."])
 
     session_start_ns = min(envelope.event.timestamp_ns for envelope in envelopes)
-    body = [format_event(envelope.event, session_start_ns=session_start_ns) for envelope in envelopes]
+    body: list[str] = []
+    for actor, events in snapshot.columns.items():
+        body.append(f"[{actor}]")
+        for event in events:
+            body.append(f"  {format_event(event, session_start_ns=session_start_ns)}")
     rendered = "\n".join([*header, *body])
-    if Console is not None:  # pragma: no branch - output remains plain text for tests
-        console = Console(record=True)
-        console.print(rendered)
-        return console.export_text().rstrip()
     return rendered
 
 
@@ -131,6 +153,19 @@ def _display_actor_and_key(entry: WALEntry) -> tuple[str, str]:
     if entry.operation == "PUSH" and ":" in entry.key:
         agent, key = entry.key.split(":", 1)
         return agent, key
+    if entry.operation in {
+        "GET",
+        "WAIT_FOR",
+        "WAIT_FOR_RESOLVE",
+        "WAIT_FOR_TIMEOUT",
+        "LOCK_ACQUIRE",
+        "LOCK_RELEASE",
+        "LOCK_TIMEOUT",
+    } and ":" in entry.key:
+        agent, key = entry.key.split(":", 1)
+        return agent, key
+    if entry.operation == "CHECKPOINT" and isinstance(entry.value, dict):
+        return "session", str(entry.value.get("path", entry.key))
     return "session", entry.key
 
 

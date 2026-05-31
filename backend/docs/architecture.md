@@ -14,7 +14,7 @@ Public constructors live here. New contributors should be able to open one file 
 
 This is the product surface. If the change affects how agents read, wait, lock, checkpoint, or broadcast, start here.
 
-Current flow: `Session` records history, publishes stream envelopes, and coordinates checkpoint/WAL boundaries without hiding those seams behind service layers.
+Current flow: `Session` records history, publishes stream envelopes, persists debug events to the WAL, and coordinates checkpoint/WAL boundaries without hiding those seams behind service layers.
 
 ### `src/memsmith/state/`
 
@@ -24,13 +24,13 @@ Low-level coordination primitives. Storage, lock ownership, and wait semantics b
 
 Anything touching WAL, checkpoint files, replay, or on-disk layout belongs here.
 
-Current flow: local pushes append to the file-backed WAL, checkpoints write both binary and JSON artifacts, and resume restores a snapshot before replaying later WAL entries.
+Current flow: local pushes and coordination events append to the file-backed WAL, checkpoints write both binary and JSON artifacts, and resume restores a snapshot before replaying later state-mutating `PUSH` entries.
 
 ### `src/memsmith/observability/`
 
 Anything that powers `memsmith watch`, `memsmith dump`, formatting, or event streaming belongs here.
 
-Current flow: dump output is reconstructed from persisted history artifacts, while watch uses live `StreamEnvelope`s in-process and a WAL-backed consumer across processes.
+Current flow: dump output is reconstructed from persisted history artifacts, while watch uses live `StreamEnvelope`s in-process and a WAL-backed grouped renderer across processes.
 
 ### `src/memsmith/server/`
 

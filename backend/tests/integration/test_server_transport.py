@@ -12,6 +12,7 @@ from urllib import request
 import memsmith
 import uvicorn
 
+from memsmith.errors import MemSmithTimeoutError
 from memsmith.server.app import create_app
 
 
@@ -69,3 +70,22 @@ def test_remote_client_push_get_wait_against_running_server(tmp_path: Path) -> N
     assert resolved == "ready"
     assert "PUSH" in operations
     assert "WAIT_FOR_RESOLVE" in operations
+
+
+def test_remote_client_lock_timeout_maps_to_memsmith_timeout(tmp_path: Path) -> None:
+    with run_server(data_dir=tmp_path) as host:
+
+        async def scenario() -> list[str]:
+            session = await memsmith.connect("remote-locks", host=host)
+            async with session.agent("writer").lock("draft"):
+                try:
+                    async with session.agent("editor").lock("draft", timeout_ms=10):
+                        raise AssertionError("editor lock should not be acquired")
+                except MemSmithTimeoutError:
+                    history = await session.history()
+                    return [event.operation for event in history]
+            raise AssertionError("editor lock should have timed out")
+
+        operations = asyncio.run(scenario())
+
+    assert operations == ["LOCK_ACQUIRE", "LOCK_TIMEOUT"]

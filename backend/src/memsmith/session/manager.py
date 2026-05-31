@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from pathlib import Path
 from time import time_ns
 from typing import Any
@@ -19,6 +18,8 @@ from memsmith.state.locks import LockRegistry
 from memsmith.state.shard_store import ShardStore
 from memsmith.state.waiters import WaitRegistry
 from memsmith.types import HistoryEvent, StateValue
+
+_UNSET = object()
 
 
 @dataclass(slots=True)
@@ -82,7 +83,7 @@ class Session:
         key: str,
         version: int = 0,
         value: Any | None = None,
-    ) -> None:
+    ) -> HistoryEvent:
         recorded_at_ns = time_ns()
         preview = None if value is None else self.preview(value)
         self.event_count += 1
@@ -98,6 +99,38 @@ class Session:
         )
         self._history.append(event)
         self._publish_event(event)
+        return event
+
+    def record_persisted_event(
+        self,
+        operation: str,
+        *,
+        agent: str,
+        key: str,
+        version: int = 0,
+        value: Any | None = None,
+        wal_value: Any = _UNSET,
+    ) -> HistoryEvent:
+        event = self.record_event(
+            operation,
+            agent=agent,
+            key=key,
+            version=version,
+            value=value,
+        )
+        persisted_value = value if wal_value is _UNSET else wal_value
+        self.wal.append(
+            operation,
+            self._wal_key_for_event(event),
+            persisted_value,
+            version=event.version or self.event_count,
+        )
+        return event
+
+    def _wal_key_for_event(self, event: HistoryEvent) -> str:
+        if event.agent == "session":
+            return event.key
+        return f"{event.agent}:{event.key}"
 
     async def notify(self, key: str) -> None:
         condition = self.waiters.for_key(key)
@@ -105,8 +138,7 @@ class Session:
             condition.notify_all()
 
     async def broadcast(self, event: str, *, payload: Any | None = None) -> None:
-        self.record_event("BROADCAST", agent="session", key=event, value=payload)
-        self.wal.append("BROADCAST", event, payload, version=self.event_count)
+        self.record_persisted_event("BROADCAST", agent="session", key=event, value=payload)
 
     async def history(self) -> list[HistoryEvent]:
         return list(self._history)
@@ -125,12 +157,12 @@ class Session:
             event_count=self.event_count,
             last_wal_timestamp_ns=last_wal_timestamp_ns,
         )
-        self.record_event("CHECKPOINT", agent="session", key=label)
-        self.wal.append(
+        self.record_persisted_event(
             "CHECKPOINT",
-            label,
-            {"path": str(self.checkpoint_writer.path_for(label))},
-            version=self.event_count,
+            agent="session",
+            key=label,
+            value=str(self.checkpoint_writer.path_for(label)),
+            wal_value={"path": str(self.checkpoint_writer.path_for(label))},
         )
 
     async def export(self, path: str | Path) -> Path:
@@ -173,4 +205,3 @@ class Session:
         envelope = StreamEnvelope(session_name=self.name, sequence=self.event_count, event=event)
         for subscriber in list(self._subscribers):
             subscriber.put_nowait(envelope)
-

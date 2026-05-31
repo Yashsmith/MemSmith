@@ -43,7 +43,13 @@ async def get_state(session: str, agent: str, key: str, request: Request) -> Sta
     state = runtime.store.get(full_key)
     if state is None:
         raise HTTPException(status_code=404, detail="State key not found")
-    runtime.record_event("GET", agent=agent, key=full_key, version=state.version, value=state.value)
+    runtime.record_persisted_event(
+        "GET",
+        agent=agent,
+        key=full_key,
+        version=state.version,
+        value=state.value,
+    )
     return StateResponse(value=state.value, version=state.version)
 
 
@@ -105,10 +111,22 @@ async def acquire_lock(
             owner=agent,
             timeout_ms=payload.timeout_ms,
         )
-    except TimeoutError as exc:
-        raise HTTPException(status_code=408, detail="Timed out acquiring lock") from exc
+    except MemSmithTimeoutError as exc:
+        status = runtime.locks.status(runtime.lock_key(agent, key))
+        runtime.record_persisted_event(
+            "LOCK_TIMEOUT",
+            agent=agent,
+            key=runtime.lock_key(agent, key),
+            value={"held_by": status.held_by, "timeout_ms": payload.timeout_ms},
+        )
+        raise HTTPException(status_code=408, detail=str(exc)) from exc
 
-    runtime.record_event("LOCK_ACQUIRE", agent=agent, key=runtime.lock_key(agent, key), value=lock_info.token)
+    runtime.record_persisted_event(
+        "LOCK_ACQUIRE",
+        agent=agent,
+        key=runtime.lock_key(agent, key),
+        value=lock_info.token,
+    )
     return asdict(lock_info)
 
 
@@ -116,7 +134,7 @@ async def acquire_lock(
 async def release_lock(session: str, agent: str, key: str, request: Request) -> dict[str, str | None]:
     runtime = _session(request, session)
     runtime.locks.release(runtime.lock_key(agent, key), owner=agent)
-    runtime.record_event("LOCK_RELEASE", agent=agent, key=runtime.lock_key(agent, key))
+    runtime.record_persisted_event("LOCK_RELEASE", agent=agent, key=runtime.lock_key(agent, key))
     return asdict(runtime.locks.status(runtime.lock_key(agent, key)))
 
 

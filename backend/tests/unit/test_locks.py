@@ -46,3 +46,20 @@ def test_lock_times_out_when_another_agent_holds_it() -> None:
 
     with pytest.raises(MemSmithTimeoutError):
         asyncio.run(scenario())
+
+
+def test_lock_timeout_is_recorded_before_raise() -> None:
+    async def scenario() -> list[str]:
+        session = memsmith.session("lock-timeout-recorded")
+        timed_out = False
+        async with session.agent("writer").lock("draft"):
+            try:
+                await session.agent("editor").lock("draft", timeout_ms=10).__aenter__()
+            except MemSmithTimeoutError:
+                timed_out = True
+        if not timed_out:
+            raise AssertionError("editor lock should have timed out")
+        history = await session.history()
+        return [event.operation for event in history]
+
+    assert asyncio.run(scenario()) == ["LOCK_ACQUIRE", "LOCK_TIMEOUT", "LOCK_RELEASE"]

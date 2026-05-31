@@ -33,10 +33,10 @@ checkpoint, WAL, and quality-comparison artifacts under `tests/Multiagent_test/r
 
 ## Good next contribution areas
 
-- deepen `memsmith watch` into a richer Textual UI on top of `observability/watch.py`
-- add remote watch client coverage over the WebSocket endpoint in `server/ws.py`
-- turn `cli/commands/serve.py` into a real server launcher over `server/app.py`
-- expand integration coverage and examples around the session-backed adapters
+- deepen `memsmith watch` into a richer interactive Textual UI on top of the grouped renderer in `observability/watch.py`
+- add a public remote watch client or `memsmith watch --host ...` path over the WebSocket endpoint in `server/ws.py`
+- expand integration coverage and examples around the lightweight session-backed adapters
+- plan semantic TTL as a separate state/persistence/observability change
 - expand the live LiteLLM benchmark matrix with more coordination scenarios
 - tighten docs and contributor onboarding as the CLI surface grows
 

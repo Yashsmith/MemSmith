@@ -52,12 +52,17 @@ python examples/two_agents.py
 python examples/crash_recovery.py
 python -m memsmith dump two-agent-demo --data-dir .memsmith-examples
 python -m memsmith watch two-agent-demo --data-dir .memsmith-examples --limit 1
+python -m memsmith serve --host 127.0.0.1 --port 7117 --data-dir .memsmith-examples
 python examples/server_mode.py
 ```
 
 The live benchmark suite entrypoint lives in `tests/Multiagent_test/` and uses LiteLLM
 to compare MemSmith coordination against a manual baseline while saving watch, dump,
 checkpoint, WAL, resume, transcript, and quality-report artifacts.
+
+Current integration adapters are lightweight wrappers over a MemSmith session. Treat
+full framework-native LangGraph/CrewAI compatibility and semantic TTL as deferred P2
+work unless a task file explicitly pulls them into scope.
 
 ## What breaks if I change this?
 
