@@ -1,0 +1,299 @@
+5. MVP Architecture
+At the end of Phase 10, the architecture should approximately look like:
+HUMAN
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │  MVP UI/API │
+                    └──────┬──────┘
+                           │
+                           ▼
+                  ┌──────────────────┐
+                  │   ORCHESTRATOR   │
+                  └────────┬─────────┘
+                           │
+             ┌─────────────┼─────────────┐
+             │             │             │
+             ▼             ▼             ▼
+       Scrum Master    Task Engine    Event Bus
+          Agent             │             │
+             │              │             │
+             └──────────────┼─────────────┘
+                            │
+                            ▼
+                  ┌──────────────────┐
+                  │   Agent Runtime  │
+                  └────────┬─────────┘
+                           │
+       ┌──────────┬────────┼────────┬──────────┐
+       ▼          ▼        ▼        ▼          ▼
+    Backend    Frontend   DB       QA       DevOps
+     Agent      Agent    Agent    Agent       Agent
+       │          │        │        │          │
+       └──────────┴────────┼────────┴──────────┘
+                           │
+                           ▼
+                   Development Env
+                           │
+             ┌─────────────┼─────────────┐
+             ▼             ▼             ▼
+            Git           Tests       Build/CI
+             │             │             │
+             └─────────────┼─────────────┘
+                           ▼
+                    Project State
+                           │
+             ┌─────────────┼─────────────┐
+             ▼             ▼             ▼
+          Backlog       Events        Memory
+             │             │             │
+             └─────────────┼─────────────┘
+                           ▼
+                      Reporting
+6. Recommended Development Order
+Do not build components in arbitrary order.
+The recommended dependency order is:
+1. Architecture
+      ↓
+2. Single-Agent Coding
+      ↓
+3. Agent Runtime
+      ↓
+4. Project State
+      ↓
+5. Backlog
+      ↓
+6. Scrum Master
+      ↓
+7. Sprint Engine
+      ↓
+8. Multi-Agent Execution
+      ↓
+9. Git Integration
+      ↓
+10. Testing / Verification
+      ↓
+11. Agile Ceremonies
+      ↓
+12. Reporting
+      ↓
+13. UI
+      ↓
+14. End-to-End Hardening
+This prevents building a beautiful orchestration system around an unreliable coding runtime.
+7. Suggested Milestones
+Milestone 1 — Agent Can Code
+Task → Agent → Code → Test → Commit
+Milestone 2 — Team Exists
+Multiple Agents
++
+Roles
++
+Communication
+Milestone 3 — Agile Exists
+Problem
+→ Backlog
+→ Sprint
+→ Tasks
+Milestone 4 — Team Can Build
+Sprint
+→ Agents
+→ Git
+→ Tests
+→ Integration
+Milestone 5 — Team Can Manage Itself
+Standup
+→ Blocker
+→ Replanning
+→ Review
+→ Retrospective
+Milestone 6 — MVP
+Human Problem
+       ↓
+Autonomous Team
+       ↓
+Working Software
+       +
+Complete Development History
+8. Post-MVP Roadmap
+The following should not be required for MVP.
+Once the MVP is stable, the system can evolve toward a more sophisticated autonomous engineering organization.
+Phase 11 — Dynamic Team Formation
+Instead of:
+Always 7 agents
+the system determines:
+Problem
+ ↓
+Required Skills
+ ↓
+Optimal Team
+ ↓
+Spawn / Assign Agents
+Phase 12 — Advanced Agent Memory
+Build persistent memory for:
+architecture
+technical decisions
+previous failures
+project conventions
+agent experience
+retrospective lessons
+Phase 13 — Advanced Planning
+Introduce:
+dependency graph optimization
+workload balancing
+effort prediction
+sprint capacity prediction
+critical path analysis
+automatic sprint-length selection
+Phase 14 — Autonomous Architecture
+Introduce a dedicated architecture capability that can:
+design system architecture
+review architectural changes
+detect architectural drift
+enforce boundaries
+evaluate technology choices
+Phase 15 — Advanced Quality System
+Introduce:
+security agent
+performance agent
+accessibility agent
+code-quality agent
+architecture reviewer
+automated threat modeling
+Phase 16 — Autonomous CI/CD
+Allow the team to:
+Develop
+ ↓
+Test
+ ↓
+Build
+ ↓
+Deploy to staging
+ ↓
+Validate
+ ↓
+Deploy
+Only after strong safety controls are established.
+Phase 17 — Organizational Learning
+Eventually the system could learn across projects:
+Project A
+   ↓
+Lessons
+
+Project B
+   ↓
+Lessons
+
+Project C
+   ↓
+Lessons
+
+       ↓
+
+Engineering Organization Knowledge
+This would transform the system from a project-specific team into a reusable autonomous engineering organization.
+9. Final Definition of Done for MVP
+The MVP should be considered DONE only when it can complete a real, non-trivial software project without requiring a human to manually coordinate every step.
+The human should primarily:
+1. Provide problem
+2. Configure constraints
+3. Start project
+4. Monitor
+5. Intervene when necessary
+6. Accept final result
+The system should handle:
+Planning
+Backlog
+Task Assignment
+Development
+Git
+Testing
+Standups
+Blockers
+Reviews
+Retrospectives
+Reporting
+The final MVP output should therefore be:
+┌─────────────────────────────────────┐
+│          WORKING SOFTWARE           │
+├─────────────────────────────────────┤
+│                                     │
+│       Generated by AI Team          │
+│                                     │
+├─────────────────────────────────────┤
+│       Complete Agile History        │
+├─────────────────────────────────────┤
+│                                     │
+│ Backlog                             │
+│ Sprint History                      │
+│ Standups                            │
+│ Commits                             │
+│ PRs                                 │
+│ Tests                               │
+│ Blockers                            │
+│ Decisions                           │
+│ Reviews                             │
+│ Retrospectives                      │
+│ Final Report                        │
+│                                     │
+└─────────────────────────────────────┘
+10. The Core MVP Loop
+Everything in the first ten phases ultimately exists to make this loop work:
+┌───────────────────┐
+                    │ Problem Statement │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │  Scrum Master     │
+                    │     Analysis      │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ Product Backlog   │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ Sprint Planning   │
+                    └─────────┬─────────┘
+                              ↓
+                    ┌───────────────────┐
+                    │ Task Assignment   │
+                    └─────────┬─────────┘
+                              ↓
+              ┌───────────────┴───────────────┐
+              ↓               ↓               ↓
+          Developer 1     Developer 2     Developer N
+              │               │               │
+              └───────────────┬───────────────┘
+                              ↓
+                       Shared Project
+                              ↓
+                     Git / Integration
+                              ↓
+                           Testing
+                              ↓
+                    ┌───────────────────┐
+                    │ Verification      │
+                    └─────────┬─────────┘
+                              ↓
+                     Daily Standups
+                              ↓
+                       Blockers/Risks
+                              ↓
+                     Sprint Review
+                              ↓
+                     Retrospective
+                              ↓
+                   Lessons / Decisions
+                              ↓
+                    Sprint Complete?
+                         /        \
+                       No          Yes
+                       ↓            ↓
+                  Next Sprint    Final Validation
+                                      ↓
+                                Working Product
+                                      ↓
+                                Final Report
+This is the MVP.
+Everything after this is about making the team more autonomous, intelligent, scalable, adaptive, and production-grade.
