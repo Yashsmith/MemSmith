@@ -1,0 +1,1362 @@
+Yes. For your architecture, I would not pick one existing harness and fork it. Your design is closer to a multi agent development operating system than a normal coding agent.
+
+The important distinction is:
+
+> Borrow implementation patterns, not architectural ownership.
+
+
+
+Your core architecture should be yours, while individual subsystems can be inspired by or adapted from different open source harnesses.
+
+I researched the current implementations and, based on your requirements, this is the decomposition I would use.
+
+My recommended source map
+
+Harness capability	Source I would take inspiration/code from	Why
+
+Agent runtime / main loop	Pi	Clean agent lifecycle and extension architecture
+Context compaction	Pi	Probably the strongest directly reusable compaction implementation
+Branching / conversation history	Pi	Structured session entries and branch summaries
+Persistent session format	Pi / Harness	Durable event/session representation
+Tool registry	Rho / Pi	Clean tool abstraction
+Tool execution lifecycle	Pi	Strong lifecycle hooks
+MCP	Rho / Pi	Existing provider/tool ecosystem
+Provider abstraction	Rho	Explicit multi provider architecture
+Subagent spawning	Prime Agent	Recursive subagents are literally a first class concept
+Recursive orchestration	Prime Agent	Closest match to your agent → subagent → subagent hierarchy
+Agent to agent communication	Prime Agent	Direct A2A communication is already part of its design
+Skills system	Prime Agent / DeepAgents	Skills are durable, reusable capabilities
+Human in the loop	DeepAgents	Explicit approve/edit/reject tool execution model
+Permissions / approval gates	OpenCode / DeepAgents	Already established patterns
+Filesystem abstraction	DeepAgents / Rho	Pluggable filesystem and coding tools
+Long term memory	Prime Agent	Persistent memories and continual harness state
+Context offloading	DeepAgents	Specifically designed for long horizon work
+Agent isolation	OpenCode	Good primary/subagent separation and permissions
+Parallel execution	Prime Agent	Built around parallel/background recursive agents
+Event lifecycle / hooks	Pi	Extremely useful for your Scrum events
+Observability hooks	Pi / Harness	Lifecycle/event driven architecture
+Execution sandbox	Zero / Harness	Keep execution isolated from orchestration
+Crash recovery	Harness	Durable JSONL sessions, leases and recovery
+Cost/token accounting	Harness	Explicit operational accounting
+Steering/interruption	Harness / Pi	Very relevant to your human intervention requirement
+Self improvement	Prime Agent	/refine style continual harness is interesting for later
+Coding tools	OpenCode / Rho	Mature read/edit/search/shell workflow
+External research agent	OpenCode Scout style	Good pattern for isolated research
+Agent configuration	OpenCode	Primary/subagent model is useful
+Scrum orchestration	YOU BUILD THIS	This is your differentiator
+Skill allocation	YOU BUILD THIS	Not conventional coding-agent behavior
+Adversarial agent mode	YOU BUILD THIS	Core unique feature
+Scrum meeting engine	YOU BUILD THIS	Unique to your architecture
+PRD consensus loop	YOU BUILD THIS	Unique
+SME intervention	YOU BUILD THIS	Unique
+Sprint state machine	YOU BUILD THIS	Unique
+Agent skill switching	YOU BUILD THIS	Unique
+Democratic/debate mechanism	YOU BUILD THIS	Unique
+Scrum artifacts	YOU BUILD THIS	PRD, architecture, design, sprint backlog etc.
+
+
+The strongest foundations here are supported by the actual projects. Pi has explicit compaction, branch summarization, session entries and lifecycle extension points.  Prime Agent explicitly treats recursive subagents and persistent harness state as first class primitives.  Rho provides provider delegation, explicit tools, sessions and an embeddable runtime.  DeepAgents explicitly combines subagents, context management, persistent memory, human in the loop and skills. 
+
+1. The architecture I would actually build
+
+I would divide your harness into 8 layers.
+
+BUSINESS SME
+                         │
+                         ▼
+                ┌──────────────────┐
+                │  SCRUM MASTER    │
+                │  ORCHESTRATOR    │
+                └────────┬─────────┘
+                         │
+          ┌──────────────┼──────────────┐
+          ▼              ▼              ▼
+      Developer 1    Developer 2    Developer 3
+          │              │              │
+       Skill A        Skill B        Skill C
+          │              │              │
+       ┌──┴──┐        ┌──┴──┐        ┌──┴──┐
+       ▼     ▼        ▼     ▼        ▼     ▼
+     Sub1  Sub2     Sub1  Sub2     Sub1  Sub2
+
+But underneath that:
+
+┌──────────────────────────────────────────────┐
+│              SCRUM / CONTROL PLANE           │
+│                                              │
+│ Meeting Engine                               │
+│ Sprint Engine                                │
+│ Consensus Engine                             │
+│ Skill Allocation                             │
+│ Agent Coordination                           │
+│ Human Intervention                           │
+│ Artifact Lifecycle                           │
+└──────────────────────┬───────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────┐
+│                 AGENT RUNTIME                │
+│                                              │
+│ Agent Loop                                   │
+│ Context                                      │
+│ Tools                                        │
+│ Sessions                                     │
+│ Providers                                    │
+│ Subagents                                    │
+│ Permissions                                  │
+└──────────────────────┬───────────────────────┘
+                       │
+┌──────────────────────▼───────────────────────┐
+│                 STATE LAYER                  │
+│                                              │
+│ Event Log                                    │
+│ Memory                                       │
+│ Context Snapshots                            │
+│ Agent State                                  │
+│ Skill State                                  │
+│ Sprint State                                 │
+│ Artifact State                               │
+└──────────────────────────────────────────────┘
+
+This separation is very important.
+
+Do not let your Scrum Master become responsible for low level tool execution.
+
+The Scrum Master should say:
+
+> "Developer 3, investigate database migration strategy."
+
+
+
+The runtime should handle:
+
+agent → context → model → tool call → tool execution → result
+
+That distinction will save you from an enormous architectural mess later.
+
+
+---
+
+2. Agent loop: take inspiration from Pi
+
+I would make Pi's runtime architecture your starting point.
+
+Pi's extension system exposes lifecycle events and runtime context, while its session manager and compaction system are reasonably cleanly separated. 
+
+Your agent loop should conceptually be:
+
+while agent.running:
+
+    context = context_manager.build(agent)
+
+    response = model.generate(context)
+
+    if response.tool_call:
+        result = tool_executor.execute(response.tool_call)
+
+        event_bus.emit(
+            ToolExecuted(...)
+        )
+
+    elif response.subagent_call:
+        result = subagent_manager.spawn(...)
+
+    else:
+        agent.finish_turn()
+
+Then expose hooks:
+
+before_turn
+after_turn
+
+before_model_call
+after_model_call
+
+before_tool_call
+after_tool_call
+
+before_subagent_spawn
+after_subagent_complete
+
+before_compaction
+after_compaction
+
+before_skill_change
+after_skill_change
+
+before_meeting
+after_meeting
+
+before_artifact_write
+after_artifact_write
+
+This is where Pi is particularly useful.
+
+Your Scrum engine can then sit above the agent runtime and subscribe to those events.
+
+
+---
+
+3. Context management: take Pi
+
+This one I would be quite decisive about.
+
+Use Pi's compaction design as your baseline.
+
+Pi does more than simply say:
+
+> summarize previous conversation.
+
+
+
+It tracks where the context is cut, keeps recent messages, stores a structured compaction entry, and tracks file operations. 
+
+That is exactly what your system needs because your agents will have:
+
+PRD
+meeting transcript
+architecture
+design
+code
+tool outputs
+other agents' reports
+SME clarification
+previous sprint state
+
+You absolutely cannot keep dumping all of that into every model call.
+
+Your context should instead become something like:
+
+SYSTEM CONTEXT
+     │
+     ├── Agent identity
+     ├── Current skill
+     ├── Current objective
+     ├── Current sprint
+     │
+PROJECT CONTEXT
+     │
+     ├── PRD.md
+     ├── architecture.md
+     ├── design.md
+     ├── backlog.md
+     │
+AGENT MEMORY
+     │
+     ├── previous decisions
+     ├── known constraints
+     └── learned conventions
+     │
+MEETING CONTEXT
+     │
+     ├── current meeting
+     ├── unresolved questions
+     └── decisions
+     │
+TASK CONTEXT
+     │
+     ├── assigned task
+     ├── relevant files
+     └── relevant agent reports
+
+Not:
+
+entire_project.txt
+
+
+---
+
+4. Memory: take Prime Agent's philosophy
+
+Prime Agent is particularly interesting for your use case because it treats persistent harness state, skills, memories and reusable subagent specifications as durable state rather than just stuffing everything into context. 
+
+I would create three levels of memory.
+
+Agent memory
+
+agents/
+    developer-01/
+        memory.md
+        preferences.md
+        learned_patterns.md
+
+Project memory
+
+.project/
+    memory/
+        decisions.md
+        conventions.md
+        architecture_decisions.md
+
+Organizational memory
+
+.harness/
+    memory/
+        scrum_patterns.md
+        engineering_rules.md
+        lessons.md
+
+And importantly:
+
+memory should not equal transcript.
+
+Your transcript is evidence.
+
+Memory is extracted knowledge.
+
+For example:
+
+Transcript:
+
+Agent 2:
+"We should use PostgreSQL."
+
+Agent 4:
+"PostgreSQL creates unnecessary operational complexity."
+
+Agent 2:
+"True. Existing infrastructure already has PostgreSQL."
+
+SME:
+"Use PostgreSQL because UBS infrastructure already supports it."
+
+Memory should become:
+
+## Decision
+
+Use PostgreSQL.
+
+## Reason
+
+Existing deployment infrastructure already supports PostgreSQL.
+
+## Authority
+
+Business SME.
+
+## Date
+
+2026-09-25
+
+That is dramatically more useful than remembering the whole conversation.
+
+
+---
+
+5. Subagents: take Prime Agent
+
+This is probably the closest architectural match to your recursive hierarchy.
+
+Prime Agent treats recursive subagents as programmatic calls and supports parallel/background child agents. 
+
+Your structure becomes:
+
+Scrum Master
+│
+├── Developer A
+│   ├── FE Subagent 1
+│   ├── FE Subagent 2
+│   └── FE Reviewer
+│
+├── Developer B
+│   ├── Backend Subagent 1
+│   ├── Backend Subagent 2
+│   └── Backend Reviewer
+│
+└── Developer C
+    ├── ML Subagent
+    └── ML Reviewer
+
+But I would add a depth limit.
+
+For example:
+
+max_agent_depth: 3
+
+Because otherwise:
+
+agent
+ → subagent
+   → subagent
+     → subagent
+       → subagent
+
+can become an uncontrolled agent explosion.
+
+
+---
+
+6. Agent communication: take Prime's A2A idea, but build your protocol
+
+Prime Agent has direct A2A communication. 
+
+But I would not copy its communication semantics wholesale.
+
+Your agents need structured messages.
+
+Something like:
+
+{
+  "from": "developer_03",
+  "to": ["developer_01"],
+  "type": "challenge",
+  "topic": "database_schema",
+  "claim": "...",
+  "evidence": ["..."],
+  "severity": "medium",
+  "requires_response": true
+}
+
+Message types:
+
+PROPOSAL
+QUESTION
+CHALLENGE
+RESPONSE
+DECISION
+BLOCKER
+REQUEST
+HANDOFF
+REVIEW
+APPROVAL
+REJECTION
+
+This becomes extremely powerful for your adversarial mode.
+
+
+---
+
+7. Your adversarial system is actually a major differentiator
+
+I would not borrow this from an existing harness.
+
+Build this yourself.
+
+You have two modes:
+
+Collaborative
+
+Agent A → proposes implementation
+
+Agent B → extends proposal
+
+Agent C → identifies missing pieces
+
+Agent D → implements
+
+Adversarial
+
+Agent A
+   │
+   ▼
+Proposal
+   │
+   ├──────► Agent B challenges
+   │
+   ├──────► Agent C challenges
+   │
+   └──────► Agent D validates
+              │
+              ▼
+           Revision
+
+But don't make "adversarial" mean:
+
+> disagree with everything.
+
+
+
+Instead give the reviewer explicit obligations:
+
+Find:
+1. Incorrect assumptions
+2. Missing requirements
+3. Security problems
+4. Scalability problems
+5. Maintainability problems
+6. Contradictions with PRD
+7. Alternative implementations
+
+That creates productive disagreement.
+
+
+---
+
+8. Skills: use Prime/DeepAgents as inspiration, but make your system declarative
+
+DeepAgents already treats skills as reusable behaviors that can be loaded on demand.  Prime Agent also treats skills as durable harness state. 
+
+Your idea should go further.
+
+Something like:
+
+skills/
+    frontend/
+        SKILL.md
+
+    backend/
+        SKILL.md
+
+    database/
+        SKILL.md
+
+    ml/
+        SKILL.md
+
+    devops/
+        SKILL.md
+
+    security/
+        SKILL.md
+
+Each skill should describe:
+
+name: frontend
+version: 1.0
+
+capabilities:
+  - React
+  - TypeScript
+  - accessibility
+  - UI architecture
+
+tools:
+  - filesystem
+  - browser
+  - shell
+
+constraints:
+  - must follow design.md
+
+outputs:
+  - implementation
+  - review
+  - tests
+
+Then:
+
+Developer 1
+     │
+     └── frontend
+
+Developer 2
+     │
+     └── frontend
+
+Developer 3
+     │
+     └── backend
+
+Same agent template.
+
+Different capability.
+
+That's exactly the architecture I would retain from your proposal.
+
+
+---
+
+9. Tool calling: Pi + Rho
+
+I would separate:
+
+Tool definition
+Tool registry
+Tool authorization
+Tool execution
+Tool result
+Tool lifecycle
+
+Rho is useful here because its runtime explicitly separates providers, tools, sessions and cancellation, and ships common coding tools. 
+
+Your abstraction should look like:
+
+class Tool:
+
+    name: str
+
+    description: str
+
+    schema: dict
+
+    async def execute(
+        self,
+        args,
+        context
+    ):
+        ...
+
+Then:
+
+ToolRegistry
+      │
+      ├── read_file
+      ├── write_file
+      ├── edit_file
+      ├── shell
+      ├── search
+      ├── browser
+      ├── git
+      ├── spawn_agent
+      └── ask_sme
+
+And critically:
+
+spawn_agent should itself be a tool.
+
+That makes recursive orchestration naturally fit into the agent loop.
+
+
+---
+
+10. Human in the loop: DeepAgents + your own meeting engine
+
+DeepAgents explicitly supports human approval, editing and rejection of tool calls. 
+
+But your human interaction is broader.
+
+You need:
+
+SME
+ │
+ ├── answer question
+ ├── interrupt meeting
+ ├── reject decision
+ ├── introduce requirement
+ ├── change direction
+ ├── approve PRD
+ ├── approve architecture
+ └── approve release
+
+Therefore I'd build:
+
+HumanController
+
+with commands such as:
+
+/interrupt
+/question
+/clarify
+/reject
+/approve
+/pivot
+/redirect
+/pause
+/resume
+
+The key design decision:
+
+human intervention should become an event.
+
+Not an invisible mutation.
+
+Example:
+
+{
+  "event": "SME_INTERVENTION",
+  "timestamp": "...",
+  "meeting": "M001",
+  "actor": "human",
+  "message": "Do not use Kafka.",
+  "reason": "Infrastructure constraint"
+}
+
+Then it becomes part of the project's permanent history.
+
+
+---
+
+11. Sessions and event sourcing: look at Harness
+
+This is one area where the harness project you found is extremely interesting.
+
+Its current implementation explicitly has durable JSONL sessions, writer leases, attachments, branches, annotations and crash recovery. It also has steering, context inspection, execution boundaries and usage accounting. 
+
+That maps beautifully onto your system.
+
+I would make your fundamental primitive:
+
+Event
+
+rather than:
+
+Conversation
+
+For example:
+
+MEETING_STARTED
+
+AGENT_JOINED
+
+SKILL_SELECTED
+
+AGENT_MESSAGE
+
+AGENT_CHALLENGE
+
+AGENT_RESPONSE
+
+SME_INTERVENTION
+
+DECISION_PROPOSED
+
+DECISION_ACCEPTED
+
+ARTIFACT_CREATED
+
+ARTIFACT_REVISED
+
+TASK_CREATED
+
+TASK_ASSIGNED
+
+TASK_COMPLETED
+
+AGENT_SPAWNED
+
+AGENT_TERMINATED
+
+MEETING_ENDED
+
+Then your .txt meeting transcript is actually a projection of the event stream.
+
+This is much better than making .txt the source of truth.
+
+
+---
+
+12. Your .txt meeting file should be a projection
+
+This is an important architectural correction I'd make to your current idea.
+
+Don't make:
+
+meeting.txt
+
+the canonical state.
+
+Instead:
+
+Event Store
+     │
+     ├── meeting.txt
+     ├── meeting.json
+     ├── decisions.md
+     ├── scrum.md
+     └── audit.log
+
+For example:
+
+.events/
+    2026-09-25/
+        M001.jsonl
+        M002.jsonl
+        M003.jsonl
+
+Then generate:
+
+meetings/
+    M001.txt
+    M002.txt
+
+That gives you replayability.
+
+If the Scrum Master crashes at minute 11:
+
+replay events
+     ↓
+restore state
+     ↓
+continue meeting
+
+This is a very important property for your harness.
+
+
+---
+
+13. Compaction should NEVER destroy your meeting record
+
+This is another place where your architecture differs from a normal coding agent.
+
+A normal coding agent can compact:
+
+500 messages
+↓
+summary
+
+But your Scrum system must retain:
+
+original meeting transcript
+
+forever.
+
+Instead:
+
+Raw transcript
+      │
+      ├── immutable
+      │
+      ▼
+Compaction
+      │
+      ▼
+Meeting summary
+      │
+      ▼
+Context representation
+
+So compaction affects model context, not historical records.
+
+Pi's compaction architecture gives you the mechanics for this. 
+
+
+---
+
+14. Artifact management should be its own subsystem
+
+You have:
+
+meeting.txt
+PRD.md
+architecture.md
+design.md
+implementation-plan.md
+scrum.md
+sprint-backlog.md
+retrospective.md
+
+Don't let agents randomly edit these.
+
+Create:
+
+ArtifactManager
+
+with lifecycle:
+
+DRAFT
+    ↓
+REVIEW
+    ↓
+CHALLENGE
+    ↓
+REVISION
+    ↓
+CONSENSUS
+    ↓
+SME_REVIEW
+    ↓
+APPROVED
+
+For example:
+
+PRD.md
+
+version 0.1
+ ↓
+agent review
+ ↓
+version 0.2
+ ↓
+agent challenge
+ ↓
+version 0.3
+ ↓
+SME review
+ ↓
+version 1.0
+
+That gives you proper provenance.
+
+
+---
+
+15. Consensus should NOT be "everyone says yes"
+
+This is another thing I'd explicitly engineer.
+
+You said:
+
+> all agents proofread and edit it in a way where everyone accepts what needs to be done
+
+
+
+Don't implement that as:
+
+if all(agent.approved):
+    finalize()
+
+Instead have:
+
+Proposal
+    ↓
+Independent reviews
+    ↓
+Conflicts extracted
+    ↓
+Debate
+    ↓
+Resolution
+    ↓
+Decision
+
+Example:
+
+Frontend Agent:
+Use WebSockets.
+
+Backend Agent:
+Disagree. SSE is sufficient.
+
+DevOps Agent:
+WebSockets increase infrastructure complexity.
+
+SME:
+Real time updates are required but bidirectional communication isn't.
+
+Scrum Master:
+Decision: SSE.
+
+The reasoning trail becomes part of the artifact.
+
+That's much more valuable than fake unanimous consensus.
+
+
+---
+
+16. Scrum Master should be a state machine
+
+This is where I would build something substantially different from OpenCode, Pi, etc.
+
+Your Scrum Master should operate roughly like:
+
+IDLE
+ ↓
+MEETING_START
+ ↓
+DISCOVERY
+ ↓
+BRAINSTORM
+ ↓
+QUESTIONS
+ ↓
+DEBATE
+ ↓
+SYNTHESIS
+ ↓
+ARTIFACT_GENERATION
+ ↓
+REVIEW
+ ↓
+CONFLICT_RESOLUTION
+ ↓
+SME_REVIEW
+ ↓
+APPROVED
+ ↓
+SPRINT_PLANNING
+ ↓
+EXECUTION
+ ↓
+DAILY_SCRUM
+ ↓
+REVIEW
+ ↓
+RETROSPECTIVE
+ ↓
+NEXT_SPRINT
+
+This is the core of your product.
+
+Don't outsource this architecture to a coding harness.
+
+
+---
+
+17. The hierarchy should have explicit authority boundaries
+
+Your hierarchy is:
+
+Human SME
+    ↓
+Business SME Agent
+    ↓
+Scrum Master
+    ↓
+Developer Agents
+    ↓
+Subagents
+
+But I'd make authority explicit.
+
+Human
+
+Can:
+
+override anything
+
+Business SME
+
+Can:
+
+change business requirements
+approve/reject product decisions
+
+Scrum Master
+
+Can:
+
+allocate work
+start/stop meetings
+spawn agents
+resolve process conflicts
+
+Developer
+
+Can:
+
+implement
+propose
+challenge
+delegate
+review
+
+Subagent
+
+Can:
+
+execute delegated work
+report
+
+This prevents a frontend subagent from accidentally making a business-level decision.
+
+
+---
+
+18. Use OpenCode for coding-agent primitives, not your orchestration
+
+OpenCode's primary/subagent model is useful here. It separates primary agents from subagents and uses permission-controlled tool access. 
+
+You can take inspiration from:
+
+primary agent
+subagent
+exploration agent
+research agent
+planning agent
+
+But your agents shouldn't fundamentally become OpenCode agents.
+
+Your system is:
+
+Scrum Agent
+Developer Agent
+Skill
+Subagent
+rather than:
+Primary Agent
+Subagent
+19. Rho is particularly useful for the provider layer
+Your model layer should be completely independent.
+Agent
+  ↓
+ModelRouter
+  ↓
+Provider
+Example:
+developer_01:
+    model: gpt-5.6
+
+developer_02:
+    model: claude
+
+developer_03:
+    model: qwen
+
+scrum_master:
+    model: gpt-5.6
+
+compaction:
+    model: cheap_fast_model
+Rho's explicit provider abstraction and delegation model are useful inspiration here. �
+GitHub
+This also lets you run heterogeneous teams.
+20. One surprisingly useful project: DeepAgents
+I wouldn't use DeepAgents as your core.
+But I'd absolutely study it.
+It already combines:
+subagents
+filesystem
+context management
+persistent memory
+human-in-loop
+skills
+tools
+MCP
+which overlaps with a huge portion of your lower-level runtime requirements. �
+GitHub
+Think of it as:
+reference implementation for agent capabilities
+rather than:
+architecture of your Scrum harness
+21. The resulting stack I'd build
+If I were building your repository tomorrow:
+harness/
+│
+├── core/
+│   ├── agent/
+│   │   ├── agent.py
+│   │   ├── loop.py
+│   │   ├── state.py
+│   │   └── lifecycle.py
+│   │
+│   ├── context/
+│   │   ├── manager.py
+│   │   ├── compaction.py
+│   │   ├── summarization.py
+│   │   └── retrieval.py
+│   │
+│   ├── memory/
+│   │   ├── short_term.py
+│   │   ├── project.py
+│   │   └── long_term.py
+│   │
+│   ├── tools/
+│   │   ├── registry.py
+│   │   ├── executor.py
+│   │   └── permissions.py
+│   │
+│   ├── models/
+│   │   ├── router.py
+│   │   └── providers/
+│   │
+│   └── sessions/
+│       ├── session.py
+│       ├── events.py
+│       └── persistence.py
+│
+├── agents/
+│   ├── developer/
+│   ├── scrum_master/
+│   └── business_sme/
+│
+├── skills/
+│   ├── frontend/
+│   ├── backend/
+│   ├── database/
+│   ├── ml/
+│   ├── devops/
+│   └── security/
+│
+├── orchestration/
+│   ├── scheduler.py
+│   ├── delegation.py
+│   ├── hierarchy.py
+│   ├── consensus.py
+│   └── adversarial.py
+│
+├── scrum/
+│   ├── meetings.py
+│   ├── sprint.py
+│   ├── backlog.py
+│   ├── retrospective.py
+│   └── scrum_master.py
+│
+├── artifacts/
+│   ├── manager.py
+│   ├── versioning.py
+│   └── approval.py
+│
+├── human/
+│   ├── intervention.py
+│   └── approval.py
+│
+└── event_store/
+    ├── event.py
+    ├── append.py
+    └── replay.py
+22. My actual "steal this code" priority
+If your team has limited time, I would investigate the projects in this order:
+1. Pi
+Take inspiration from:
+context management
+compaction
+session model
+branching
+lifecycle hooks
+extensions
+tool lifecycle
+Pi has unusually accessible implementation boundaries for these concepts. �
+GitHub +1
+2. Prime Agent
+Take:
+recursive agents
+subagent spawning
+persistent harness state
+skills
+A2A
+long-running execution
+This is the closest conceptual match to your recursive agent hierarchy. �
+GitHub +1
+3. Harness
+Take:
+durable sessions
+event persistence
+crash recovery
+leases
+steering
+execution boundaries
+usage accounting
+These are the boring pieces that become extremely important once your system actually runs for hours or days. �
+GitHub
+4. Rho
+Take:
+provider abstraction
+delegation
+tool abstraction
+sessions
+cancellation
+embeddable runtime
+�
+GitHub
+5. DeepAgents
+Study:
+skills
+memory
+context offloading
+subagents
+human approval
+filesystem
+MCP
+�
+GitHub
+6. OpenCode
+Study:
+agent configuration
+primary/subagent distinction
+permissions
+coding tools
+exploration agents
+research agents
+�
+GitHub
+7. Zero / other coding harnesses
+Study primarily for:
+execution isolation
+sandboxing
+terminal execution
+I wouldn't make one of these your architectural foundation.
+23. The most important architectural principle
+Your project should not become:
+Pi + Prime + Rho + OpenCode + DeepAgents
+That will become Frankenstein architecture.
+Instead:
+                    YOUR SCRUM OS
+                         │
+        ┌────────────────┼────────────────┐
+        │                │                │
+   Scrum Engine     Agent Runtime    Artifact Engine
+        │                │                │
+        │        ┌───────┼────────┐       │
+        │        │       │        │       │
+        │      Tools   Context  Agents    │
+        │        │       │        │       │
+        │        │       │        │       │
+        └────────┴───────┴────────┴───────┘
+                         │
+                 Open-source ideas
+In other words:
+Your orchestration layer owns the system.
+The borrowed harnesses provide primitives underneath it.
+24. And I would add one thing you haven't explicitly described
+You need a Decision / Evidence subsystem.
+This could become one of the most important parts of the entire harness.
+Every important decision should have:
+Decision ID
+Decision
+Alternatives considered
+Agents involved
+Arguments
+Evidence
+Challenges
+Resolution
+Authority
+Timestamp
+Related artifact
+For example:
+DEC-042
+
+Decision:
+Use PostgreSQL instead of MongoDB.
+
+Alternatives:
+MongoDB
+PostgreSQL
+
+Arguments:
+...
+
+Challenges:
+...
+
+SME constraint:
+Existing infrastructure requires PostgreSQL.
+
+Final authority:
+Business SME
+
+Affected:
+architecture.md
+PRD.md
+implementation-plan.md
+Then when an agent later asks:
+"Why the hell are we using PostgreSQL?"
+The harness doesn't need to hallucinate an answer.
+It retrieves:
+DEC-042
+That gives your system something most coding harnesses don't really have:
+institutional memory.
+And that is why I think your project should be built around events + decisions + artifacts + agents, rather than conversations alone.
+The final mapping I'd put on your architecture diagram
+┌─────────────────────────────────────────────────────┐
+│                    YOUR SYSTEM                      │
+│                                                     │
+│  Scrum Engine             Consensus Engine          │
+│  Meeting Engine           Skill Allocation          │
+│  Sprint Engine            Decision Engine           │
+│  Artifact Engine          Human Intervention        │
+│                                                     │
+├─────────────────────────────────────────────────────┤
+│                 AGENT RUNTIME                       │
+│                                                     │
+│  Agent Loop               Subagents                 │
+│  Tool Calling             Permissions               │
+│  Provider Router          A2A                       │
+│                                                     │
+├─────────────────────────────────────────────────────┤
+│                 CONTEXT / STATE                     │
+│                                                     │
+│  Compaction               Memory                    │
+│  Sessions                 Event Store               │
+│  Context Retrieval        Checkpoints               │
+│                                                     │
+├─────────────────────────────────────────────────────┤
+│                  EXECUTION                         │
+│                                                     │
+│  Filesystem               Shell                     │
+│  Git                      MCP                       │
+│  Sandbox                  Browser                   │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+
+       ↑             ↑             ↑             ↑
+       │             │             │             │
+      Pi          Prime          Rho        DeepAgents
+  context/       recursive      providers/    skills/
+  sessions       agents         tools         HITL
+  compaction     memory         runtime        memory
+
+                         +
+                      OpenCode
+                 coding primitives
+If I had to choose just one implementation source per subsystem:
+Pi for context and lifecycle. Prime Agent for recursive agents and memory. Rho for providers and runtime abstraction. DeepAgents for skills and human-in-loop. Harness for durable state and recovery. OpenCode for coding-agent conventions. Your team builds Scrum, consensus, adversarial collaboration, skill allocation, artifact governance and decision memory.
+That combination fits your proposed architecture substantially better than trying to make OpenCode, Ada, Zero, or any other existing coding harness become the entire foundation. �
