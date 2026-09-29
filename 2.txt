@@ -1,0 +1,117 @@
+For your exact requirement, I would not use pgloader as the main solution. It is designed for migrations, whereas you need a highly controlled Test → Dev append with Dev treated as immutable.
+
+What I'd use
+
+1. pg_dump / pg_restore for the safety backup. PostgreSQL's native tools support restoring data in a single transaction with --single-transaction. 
+
+
+2. pg-schema-diff by Stripe for schema comparison and migration planning. It has hazard detection and validates migration plans against a temporary database. 
+
+
+3. pgsync is interesting for the actual Postgres → Postgres data movement. It has explicit safety protections, including restricting destinations to localhost by default, and supports append only tables. 
+
+
+4. Python + psycopg3 + SQLAlchemy for your orchestration layer. This is where I'd implement your exact rules, because existing tools don't give you the precise "Dev must never be changed except approved INSERTs" guarantee you want.
+
+
+5. Do NOT use pg-schema-diff to modify Dev's schema. Use it strictly as a detection/verification mechanism. Your tool should abort if the schemas aren't compatible rather than altering Dev.
+
+
+
+The architecture I'd build
+
+TEST DB
+   │
+   │ read only
+   ▼
+┌───────────────────────┐
+│ Schema + Data Analyzer│
+└───────────┬───────────┘
+            │
+            ▼
+      Compatibility Check
+            │
+      ┌─────┴─────┐
+      │           │
+    SAFE        UNSAFE
+      │           │
+      ▼           ▼
+ Generate Plan    ABORT
+      │
+      ▼
+ ┌─────────────────┐
+ │ TERMINAL REVIEW │
+ │                 │
+ │ Tables: 24      │
+ │ Rows: 1.82M     │
+ │ Inserts: 1.79M  │
+ │ Updates: 0      │
+ │ Deletes: 0      │
+ │ DDL: 0          │
+ │ Conflicts: 143  │
+ │                 │
+ │ [APPROVE]       │
+ └────────┬────────┘
+          │
+          ▼
+   pg_dump DEV backup
+          │
+          ▼
+    BEGIN TRANSACTION
+          │
+          ▼
+    INSERT TEST → DEV
+          │
+          ▼
+      VALIDATIONS
+          │
+     ┌────┴────┐
+     │         │
+    PASS      FAIL
+     │         │
+ COMMIT      ROLLBACK
+
+The hard rule should be:
+
+Allowed:
+INSERT
+
+Forbidden:
+UPDATE
+DELETE
+DROP
+ALTER
+TRUNCATE
+CREATE
+RENAME
+GRANT
+REVOKE
+SEQUENCE modification
+
+And I'd go further: don't even trust the generated SQL. Parse/validate the final SQL plan and reject anything that isn't an approved INSERT.
+
+For rollback, transaction rollback is your first line of defense. The pg_dump backup is your second line of defense in case something goes wrong outside the transaction or you discover an issue later.
+
+Short system prompt
+
+You are a PostgreSQL Test→Dev Data Merge Safety Agent.
+
+Goal: append Test database data into Dev without changing, deleting, updating, or structurally modifying any existing Dev state.
+
+Rules:
+1. Dev is immutable except for explicitly approved INSERT operations.
+2. Never execute UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, RENAME, GRANT, REVOKE, or sequence modifications on Dev.
+3. Inspect and compare Test and Dev schemas before generating a plan.
+4. Abort on incompatible schemas, type conflicts, constraint conflicts, PK collisions, FK violations, or ambiguous mappings.
+5. Never automatically modify Dev schema to accommodate Test.
+6. Generate a complete dry-run plan showing tables, row counts, mappings, conflicts, SQL operations, and expected effects.
+7. Require explicit interactive terminal confirmation immediately before execution.
+8. Take a verified Dev backup before writing.
+9. Execute approved INSERTs inside a transaction whenever possible.
+10. Validate row counts, constraints, checksums and invariants after insertion.
+11. Automatically ROLLBACK on any validation failure.
+12. Provide a recovery command using the backup if post-commit recovery is required.
+13. Never hide conflicts or silently transform data.
+14. Default to ABORT whenever safety cannot be proven.
+
+My pick: build the safety/orchestration layer yourself with Python + psycopg3, use native pg_dump for recovery, and use Stripe's pg-schema-diff for schema analysis. pgsync can be evaluated for the data copying component, but I would not give it unrestricted access to Dev. 
