@@ -1,0 +1,3 @@
+Could not establish connection to
+"grey-hare-50c56-devpod-mc02-glb-service.ws.svc.cluster.local":
+Permission denied (publickey,gssapi-keyex,gssapi-with-mic).
